@@ -1,64 +1,29 @@
--- ROBLOX MAP EXPORTER - ULTIMATE FIX
--- Author: Nyemek Hub
--- Version: 3.0 - Maximum Compatibility
+-- NYEMEK HUB - WEB DOWNLOAD EXPORTER
+-- Upload file ke website, dapat link download
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local Window = Rayfield:CreateWindow({
-   Name = "Nyemek Hub | Map Exporter",
-   LoadingTitle = "Loading XML Serializer...",
-   LoadingSubtitle = "Ultimate Fixed Version",
+   Name = "Nyemek Hub | Web Exporter",
+   LoadingTitle = "Loading Web Uploader...",
+   LoadingSubtitle = "Download via Browser",
    ConfigurationSaving = { Enabled = false }
 })
 
 local Tab = Window:CreateTab("📤 Export", 4483362458)
-local SettingsTab = Window:CreateTab("⚙️ Settings", 4483362458)
 local webhookUrl = ""
 
--- DETEKSI SEMUA HTTP METHODS
-local httpMethods = {}
-
-if syn and syn.request then
-    table.insert(httpMethods, {name = "syn.request", func = syn.request})
-end
-if request then
-    table.insert(httpMethods, {name = "request", func = request})
-end
-if http and http.request then
-    table.insert(httpMethods, {name = "http.request", func = http.request})
-end
-if http_request then
-    table.insert(httpMethods, {name = "http_request", func = http_request})
+-- DETEKSI HTTP
+local httpRequest = nil
+if syn and syn.request then httpRequest = syn.request
+elseif request then httpRequest = request
+elseif http and http.request then httpRequest = http.request
+elseif http_request then httpRequest = http_request
 end
 
--- Tambah HttpService sebagai fallback
 local HttpService = game:GetService("HttpService")
-table.insert(httpMethods, {
-    name = "HttpService",
-    func = function(options)
-        return HttpService:RequestAsync({
-            Url = options.Url,
-            Method = options.Method,
-            Headers = options.Headers,
-            Body = options.Body
-        })
-    end
-})
-
-local hasWriteFile = (writefile and readfile and isfolder and makefolder) ~= nil
-
-SettingsTab:CreateInput({
-   Name = "Discord Webhook URL",
-   PlaceholderText = "Paste webhook...",
-   Callback = function(Text) 
-       webhookUrl = Text:match("^%s*(.-)%s*$")
-       if webhookUrl ~= "" then
-           Rayfield:Notify({Title = "✅ Webhook Set", Content = "Ready to export!", Duration = 2})
-       end
-   end,
-})
-
 local refCounter = 0
+
 local function GetRef()
     refCounter = refCounter + 1
     return string.format("RBX%08X", refCounter)
@@ -66,7 +31,7 @@ end
 
 local function escapeXML(str)
     if type(str) ~= "string" then return tostring(str) end
-    return str:gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;"):gsub('"', "&quot;"):gsub("'", "&apos;")
+    return str:gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;")
 end
 
 local function PropertyToXML(propName, propValue, propType)
@@ -76,25 +41,15 @@ local function PropertyToXML(propName, propValue, propType)
             propName, x, y, z, r00, r01, r02, r10, r11, r12, r20, r21, r22)
     elseif propType == "Vector3" then
         return string.format('<Vector3 name="%s"><X>%f</X><Y>%f</Y><Z>%f</Z></Vector3>', propName, propValue.X, propValue.Y, propValue.Z)
-    elseif propType == "Vector2" then
-        return string.format('<Vector2 name="%s"><X>%f</X><Y>%f</Y></Vector2>', propName, propValue.X, propValue.Y)
     elseif propType == "Color3" then
         return string.format('<Color3 name="%s"><R>%f</R><G>%f</G><B>%f</B></Color3>', propName, propValue.R, propValue.G, propValue.B)
-    elseif propType == "BrickColor" then
-        return string.format('<int name="%s">%d</int>', propName, propValue.Number)
     elseif propType == "UDim2" then
         return string.format('<UDim2 name="%s"><XS>%f</XS><XO>%d</XO><YS>%f</YS><YO>%d</YO></UDim2>', 
             propName, propValue.X.Scale, propValue.X.Offset, propValue.Y.Scale, propValue.Y.Offset)
-    elseif propType == "Enum" or propType == "EnumItem" then
-        return string.format('<token name="%s">%d</token>', propName, propValue.Value)
     elseif type(propValue) == "boolean" then
         return string.format('<bool name="%s">%s</bool>', propName, tostring(propValue))
     elseif type(propValue) == "number" then
-        if math.floor(propValue) == propValue then
-            return string.format('<int name="%s">%d</int>', propName, propValue)
-        else
-            return string.format('<float name="%s">%f</float>', propName, propValue)
-        end
+        return string.format('<float name="%s">%f</float>', propName, propValue)
     elseif type(propValue) == "string" then
         return string.format('<string name="%s">%s</string>', propName, escapeXML(propValue))
     end
@@ -102,25 +57,18 @@ local function PropertyToXML(propName, propValue, propType)
 end
 
 local importantProps = {
-    BasePart = {"CFrame", "Size", "Color", "Material", "Transparency", "CanCollide", "Anchored", "BrickColor"},
-    Model = {"PrimaryPart"},
+    BasePart = {"CFrame", "Size", "Color", "Material", "Transparency", "CanCollide", "Anchored"},
     Part = {"Shape"},
     MeshPart = {"MeshId", "TextureID"},
-    SpecialMesh = {"MeshType", "MeshId", "TextureId", "Scale"},
-    Decal = {"Texture", "Face"},
-    GuiObject = {"Size", "Position", "Visible", "BackgroundColor3", "BackgroundTransparency"},
+    Model = {"PrimaryPart"},
+    GuiObject = {"Size", "Position", "Visible", "BackgroundColor3"},
     TextLabel = {"Text", "TextColor3", "Font", "TextSize"},
-    ImageLabel = {"Image", "ImageColor3"},
-    Sound = {"SoundId", "Volume", "Looped"},
 }
 
 local function GetXML(obj, depth)
     depth = depth or 0
     if depth > 150 then return "" end
-    
-    if obj:IsA("Terrain") or obj:IsA("Camera") or obj.ClassName == "Player" then 
-        return "" 
-    end
+    if obj:IsA("Terrain") or obj:IsA("Camera") or obj.ClassName == "Player" then return "" end
     
     local xml = {}
     table.insert(xml, string.format('<Item class="%s" referent="%s">', obj.ClassName, GetRef()))
@@ -132,8 +80,6 @@ local function GetXML(obj, depth)
         if success and src and src ~= "" then
             src = src:gsub("]]>", "]]]]><![CDATA[>")
             table.insert(xml, '<ProtectedString name="Source"><![CDATA[' .. src .. ']]></ProtectedString>')
-        else
-            table.insert(xml, '<ProtectedString name="Source"></ProtectedString>')
         end
     end
     
@@ -141,11 +87,9 @@ local function GetXML(obj, depth)
         if obj:IsA(className) then
             for _, propName in ipairs(props) do
                 local success, propValue = pcall(function() return obj[propName] end)
-                if success and propValue ~= nil then
+                if success and propValue then
                     local propXML = PropertyToXML(propName, propValue, typeof(propValue))
-                    if propXML ~= "" then
-                        table.insert(xml, propXML)
-                    end
+                    if propXML ~= "" then table.insert(xml, propXML) end
                 end
             end
         end
@@ -164,195 +108,169 @@ local function GetXML(obj, depth)
     return table.concat(xml, "\n")
 end
 
--- METHOD 1: SIMPLE JSON (PALING RELIABLE)
-local function SendMethod1(serviceName, fileName, fileSize)
-    print("[METHOD 1] Trying simple JSON...")
+-- UPLOAD TO FILE.IO (Free temporary file host)
+local function UploadToFileIO(fileName, fileData)
+    print("[UPLOAD] Uploading to file.io...")
     
-    local payload = HttpService:JSONEncode({
-        username = "Nyemek Hub Exporter",
-        content = "✅ **Export Complete!**\n\n📦 **Service:** `" .. serviceName .. "`\n📊 **Size:** " .. string.format("%.2f KB", fileSize/1024) .. "\n⏰ **Time:** " .. os.date("%H:%M:%S") .. "\n\n**Note:** File saved locally due to Discord size limits.\n**Path:** `workspace/NyemekExports/" .. fileName .. "`"
-    })
+    local boundary = "----Boundary" .. tostring(math.random(100000, 999999))
+    local payload = "--" .. boundary .. "\r\n"
+    payload = payload .. 'Content-Disposition: form-data; name="file"; filename="' .. fileName .. '"\r\n'
+    payload = payload .. "Content-Type: application/xml\r\n\r\n"
+    payload = payload .. fileData .. "\r\n"
+    payload = payload .. "--" .. boundary .. "--\r\n"
     
-    for i, method in ipairs(httpMethods) do
-        local success, response = pcall(function()
-            return method.func({
-                Url = webhookUrl,
-                Method = "POST",
-                Headers = {["Content-Type"] = "application/json"},
-                Body = payload
-            })
-        end)
-        
-        if success and response then
-            local statusOk = response.Success or response.StatusCode == 200 or response.StatusCode == 204
-            print("[METHOD 1] " .. method.name .. ":", statusOk and "SUCCESS" or "FAILED")
-            if statusOk then return true end
-        else
-            print("[METHOD 1] " .. method.name .. ": ERROR", tostring(response))
-        end
-    end
+    if not httpRequest then return nil, "HTTP not supported" end
     
-    return false
-end
-
--- METHOD 2: EMBED (LEBIH FANCY)
-local function SendMethod2(serviceName, fileName, fileSize)
-    print("[METHOD 2] Trying embed...")
-    
-    local payload = HttpService:JSONEncode({
-        username = "Nyemek Hub",
-        embeds = {{
-            title = "📤 Map Export Success",
-            description = "Your map has been exported successfully!",
-            color = 5763719,
-            fields = {
-                {name = "📦 Service", value = "`" .. serviceName .. "`", inline = true},
-                {name = "📊 Size", value = string.format("%.2f KB", fileSize/1024), inline = true},
-                {name = "📁 File", value = "`" .. fileName .. "`", inline = false},
-                {name = "💡 How to Import", value = "1. Open Roblox Studio\n2. Insert → Insert from File\n3. Select: `workspace/NyemekExports/" .. fileName .. "`", inline = false}
+    local success, response = pcall(function()
+        return httpRequest({
+            Url = "https://file.io",
+            Method = "POST",
+            Headers = {
+                ["Content-Type"] = "multipart/form-data; boundary=" .. boundary
             },
-            timestamp = os.date("!%Y-%m-%dT%H:%M:%S")
-        }}
-    })
+            Body = payload
+        })
+    end)
     
-    for i, method in ipairs(httpMethods) do
-        local success, response = pcall(function()
-            return method.func({
-                Url = webhookUrl,
-                Method = "POST",
-                Headers = {["Content-Type"] = "application/json"},
-                Body = payload
-            })
-        end)
-        
-        if success and response then
-            local statusOk = response.Success or response.StatusCode == 200 or response.StatusCode == 204
-            print("[METHOD 2] " .. method.name .. ":", statusOk and "SUCCESS" or "FAILED")
-            if statusOk then return true end
+    if success and response and response.Body then
+        local data = HttpService:JSONDecode(response.Body)
+        if data.success and data.link then
+            return data.link, nil
+        else
+            return nil, "Upload failed"
         end
     end
     
-    return false
+    return nil, "Request failed"
 end
 
--- SAVE FILE
-local function SaveToFile(serviceName, finalData, fileName)
-    if not hasWriteFile then 
-        print("[FILE] WriteFile not supported")
-        return false 
+-- UPLOAD TO GOFILE.IO (Alternative)
+local function UploadToGoFile(fileName, fileData)
+    print("[UPLOAD] Getting GoFile server...")
+    
+    -- Get server
+    local serverSuccess, serverResponse = pcall(function()
+        return httpRequest({
+            Url = "https://api.gofile.io/getServer",
+            Method = "GET"
+        })
+    end)
+    
+    if not serverSuccess or not serverResponse.Body then return nil, "Server fetch failed" end
+    
+    local serverData = HttpService:JSONDecode(serverResponse.Body)
+    if serverData.status ~= "ok" then return nil, "No server available" end
+    
+    local server = serverData.data.server
+    print("[UPLOAD] Uploading to " .. server .. "...")
+    
+    -- Upload file
+    local boundary = "----Boundary" .. tostring(math.random(100000, 999999))
+    local payload = "--" .. boundary .. "\r\n"
+    payload = payload .. 'Content-Disposition: form-data; name="file"; filename="' .. fileName .. '"\r\n'
+    payload = payload .. "Content-Type: application/xml\r\n\r\n"
+    payload = payload .. fileData .. "\r\n"
+    payload = payload .. "--" .. boundary .. "--\r\n"
+    
+    local uploadSuccess, uploadResponse = pcall(function()
+        return httpRequest({
+            Url = "https://" .. server .. ".gofile.io/uploadFile",
+            Method = "POST",
+            Headers = {
+                ["Content-Type"] = "multipart/form-data; boundary=" .. boundary
+            },
+            Body = payload
+        })
+    end)
+    
+    if uploadSuccess and uploadResponse.Body then
+        local data = HttpService:JSONDecode(uploadResponse.Body)
+        if data.status == "ok" and data.data.downloadPage then
+            return data.data.downloadPage, nil
+        end
     end
     
-    local folderName = "NyemekExports"
-    if not isfolder(folderName) then
-        makefolder(folderName)
-    end
-    
-    local filePath = folderName .. "/" .. fileName
-    writefile(filePath, finalData)
-    print("[FILE] Saved:", filePath)
-    
-    return true, filePath
+    return nil, "Upload failed"
 end
 
 -- MAIN EXPORT
 local function SendExport(serviceName)
-    print("\n========== EXPORT START ==========")
-    print("[INFO] Service:", serviceName)
-    print("[INFO] Webhook set:", webhookUrl ~= "")
-    print("[INFO] Available HTTP methods:", #httpMethods)
-    
-    if webhookUrl == "" and not hasWriteFile then 
-        Rayfield:Notify({
-            Title = "❌ Error", 
-            Content = "Set webhook or use executor with writefile!", 
-            Duration = 5
-        })
-        return 
-    end
-    
-    Rayfield:Notify({
-        Title = "⏳ Exporting", 
-        Content = "Processing " .. serviceName .. "...", 
-        Duration = 2
-    })
+    Rayfield:Notify({Title = "⏳ Processing", Content = "Generating XML...", Duration = 2})
     
     refCounter = 0
     local header = '<?xml version="1.0" encoding="UTF-8"?>\n<roblox xmlns:xmime="http://www.w3.org/2005/05/xmlmime" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://www.roblox.com/roblox.xsd" version="4">\n<External>null</External>\n<External>nil</External>\n'
     
     local service = game:GetService(serviceName)
     local body = ""
-    local childCount = 0
     
     for _, child in ipairs(service:GetChildren()) do
         body = body .. GetXML(child)
-        childCount = childCount + 1
-    end
-    
-    if childCount == 0 then
-        print("[WARN] Service is empty")
-        Rayfield:Notify({Title = "⚠️ Empty", Content = serviceName .. " is empty!", Duration = 3})
-        return
     end
     
     local finalData = header .. body .. "\n</roblox>"
     local fileName = serviceName .. "_" .. os.date("%Y%m%d_%H%M%S") .. ".rbxmx"
-    local fileSize = #finalData
     
-    print("[INFO] XML generated:", fileSize, "bytes")
+    print("[INFO] XML size:", string.format("%.2f KB", #finalData/1024))
     
-    -- SAVE FILE FIRST (ALWAYS)
-    local fileSaved = false
-    if hasWriteFile then
-        local success, filePath = SaveToFile(serviceName, finalData, fileName)
-        if success then
-            fileSaved = true
-            print("[FILE] Save success:", filePath)
-        end
+    -- Try file.io first
+    Rayfield:Notify({Title = "📤 Uploading", Content = "Uploading to web...", Duration = 3})
+    
+    local link, err = UploadToFileIO(fileName, finalData)
+    
+    -- Try GoFile if file.io fails
+    if not link then
+        print("[WARN] file.io failed, trying GoFile...")
+        link, err = UploadToGoFile(fileName, finalData)
     end
     
-    -- TRY WEBHOOK NOTIFICATION
-    local webhookSent = false
-    if webhookUrl ~= "" then
-        print("[WEBHOOK] Attempting to send notification...")
+    if link then
+        print("[SUCCESS] Download link:", link)
         
-        -- Try Method 1
-        if SendMethod1(serviceName, fileName, fileSize) then
-            webhookSent = true
-            print("[WEBHOOK] Method 1 success!")
-        -- Try Method 2 if Method 1 fails
-        elseif SendMethod2(serviceName, fileName, fileSize) then
-            webhookSent = true
-            print("[WEBHOOK] Method 2 success!")
+        -- Copy to clipboard if supported
+        if setclipboard then
+            setclipboard(link)
+            Rayfield:Notify({
+                Title = "✅ Upload Success!", 
+                Content = "Link copied to clipboard!\n" .. link, 
+                Duration = 10
+            })
         else
-            print("[WEBHOOK] All methods failed")
+            Rayfield:Notify({
+                Title = "✅ Upload Success!", 
+                Content = "Check console (F9) for link!", 
+                Duration = 8
+            })
         end
-    end
-    
-    print("========== EXPORT END ==========\n")
-    
-    -- SHOW RESULT
-    if fileSaved and webhookSent then
-        Rayfield:Notify({
-            Title = "✅ Complete!", 
-            Content = "File saved & Discord notified!\n" .. fileName, 
-            Duration = 6
-        })
-    elseif fileSaved then
-        Rayfield:Notify({
-            Title = "✅ File Saved!", 
-            Content = "Path: workspace/NyemekExports/" .. fileName .. "\n(Webhook failed, but file is safe!)", 
-            Duration = 7
-        })
-    elseif webhookSent then
-        Rayfield:Notify({
-            Title = "✅ Discord Notified!", 
-            Content = "Check webhook!\n(File save failed)", 
-            Duration = 6
-        })
+        
+        -- Send to Discord if webhook set
+        if webhookUrl ~= "" and httpRequest then
+            local discordPayload = HttpService:JSONEncode({
+                embeds = {{
+                    title = "📤 Map Export - Web Download",
+                    description = "Click the link below to download:",
+                    color = 5763719,
+                    fields = {
+                        {name = "📦 Service", value = "`" .. serviceName .. "`", inline = true},
+                        {name = "📊 Size", value = string.format("%.2f KB", #finalData/1024), inline = true},
+                        {name = "🔗 Download Link", value = "[Click Here](" .. link .. ")", inline = false}
+                    }
+                }}
+            })
+            
+            pcall(function()
+                httpRequest({
+                    Url = webhookUrl,
+                    Method = "POST",
+                    Headers = {["Content-Type"] = "application/json"},
+                    Body = discordPayload
+                })
+            end)
+        end
     else
+        print("[ERROR] Upload failed:", err)
         Rayfield:Notify({
-            Title = "❌ Failed", 
-            Content = "Check console (F9) for details", 
+            Title = "❌ Upload Failed", 
+            Content = "Error: " .. tostring(err), 
             Duration = 5
         })
     end
@@ -363,80 +281,17 @@ Tab:CreateButton({Name = "📤 Export Workspace", Callback = function() SendExpo
 Tab:CreateButton({Name = "🎨 Export StarterGui", Callback = function() SendExport("StarterGui") end})
 Tab:CreateButton({Name = "📦 Export ReplicatedStorage", Callback = function() SendExport("ReplicatedStorage") end})
 Tab:CreateButton({Name = "🎮 Export ServerScriptService", Callback = function() SendExport("ServerScriptService") end})
-Tab:CreateButton({Name = "⚙️ Export ServerStorage", Callback = function() SendExport("ServerStorage") end})
-Tab:CreateButton({Name = "💡 Export Lighting", Callback = function() SendExport("Lighting") end})
 
--- WEBHOOK TEST
-SettingsTab:CreateButton({
-    Name = "🧪 Test Webhook",
-    Callback = function()
-        if webhookUrl == "" then
-            Rayfield:Notify({Title = "❌ Error", Content = "Set webhook first!", Duration = 3})
-            return
-        end
-        
-        print("\n========== WEBHOOK TEST ==========")
-        
-        local testPayload = HttpService:JSONEncode({
-            username = "Nyemek Hub Test",
-            content = "✅ **Webhook Test**\n\nYour webhook is working correctly!"
-        })
-        
-        local anySuccess = false
-        
-        for i, method in ipairs(httpMethods) do
-            local success, response = pcall(function()
-                return method.func({
-                    Url = webhookUrl,
-                    Method = "POST",
-                    Headers = {["Content-Type"] = "application/json"},
-                    Body = testPayload
-                })
-            end)
-            
-            if success and response then
-                local statusOk = response.Success or response.StatusCode == 200 or response.StatusCode == 204
-                print("[TEST] " .. method.name .. ":", statusOk and "✅ SUCCESS" or "❌ FAILED")
-                if statusOk then anySuccess = true end
-            else
-                print("[TEST] " .. method.name .. ": ❌ ERROR")
-            end
-        end
-        
-        print("========== TEST END ==========\n")
-        
-        if anySuccess then
-            Rayfield:Notify({Title = "✅ Success!", Content = "Webhook working! Check Discord", Duration = 4})
-        else
-            Rayfield:Notify({Title = "❌ All Failed", Content = "Check F9 console", Duration = 4})
-        end
-    end
+-- WEBHOOK (OPTIONAL)
+Tab:CreateInput({
+   Name = "Discord Webhook (Optional)",
+   PlaceholderText = "For notifications...",
+   Callback = function(Text) webhookUrl = Text:match("^%s*(.-)%s*$") end,
 })
 
--- STATUS
-local statusText = "🔍 System Status:\n\n"
-statusText = statusText .. "🌐 HTTP Methods: " .. #httpMethods .. " available\n"
-statusText = statusText .. (hasWriteFile and "✅ File Save: Supported\n" or "❌ File Save: Not Supported\n")
-statusText = statusText .. "\n💡 Tips:\n- Always save file locally\n- Webhook is for notification only\n- Check F9 for detailed logs"
-
-SettingsTab:CreateParagraph({Title = "System Info", Content = statusText})
-
-SettingsTab:CreateParagraph({
-    Title = "📌 Info", 
-    Content = "Version 3.0\nBy: Nyemek Hub\n\nFile will ALWAYS save locally.\nWebhook is just for notification!"
+Tab:CreateParagraph({
+    Title = "💡 How it works", 
+    Content = "1. Export map\n2. Get download link\n3. Open link in browser\n4. Download .rbxmx file\n5. Import to Roblox Studio\n\nLink expires after 1 download!"
 })
 
--- SHOW AVAILABLE METHODS
-print("\n========== NYEMEK HUB EXPORTER ==========")
-print("Available HTTP methods:")
-for i, method in ipairs(httpMethods) do
-    print("  " .. i .. ". " .. method.name)
-end
-print("WriteFile support:", hasWriteFile)
-print("==========================================\n")
-
-Rayfield:Notify({
-    Title = "✅ Ready!", 
-    Content = "Press F9 to see detailed logs", 
-    Duration = 3
-})
+Rayfield:Notify({Title = "✅ Ready!", Content = "Export to get download link!", Duration = 3})
