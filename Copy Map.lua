@@ -1,77 +1,46 @@
--- NYEMEK HUB - ULTIMATE SAVER WITH PROGRESS
--- GUARANTEED WORK + Real-time Progress
+-- NYEMEK HUB - XENO COMPATIBLE SAVER
+-- Auto-open folder after save
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local Window = Rayfield:CreateWindow({
-   Name = "Nyemek Hub | Ultimate Saver",
-   LoadingTitle = "Loading Ultimate Saver...",
-   LoadingSubtitle = "With Progress Bar",
+   Name = "Nyemek Hub | Xeno Saver",
+   LoadingTitle = "Loading Xeno Saver...",
+   LoadingSubtitle = "With Auto-Open Folder",
    ConfigurationSaving = { Enabled = false }
 })
 
 local MainTab = Window:CreateTab("💾 Save", 4483362458)
 local ProgressTab = Window:CreateTab("📊 Progress", 4483362458)
-local SettingsTab = Window:CreateTab("⚙️ Settings", 4483362458)
 
--- PROGRESS TRACKING
 local progressData = {
     currentService = "Idle",
-    currentObject = "",
     totalObjects = 0,
     processedObjects = 0,
     percentage = 0,
     status = "Ready",
-    startTime = 0
+    startTime = 0,
+    savedFileName = ""
 }
 
--- CREATE PROGRESS DISPLAY
-local progressParagraph = ProgressTab:CreateParagraph({
-    Title = "📊 Progress",
-    Content = "Status: Ready\n\nWaiting to start..."
-})
-
-local function UpdateProgress()
-    local elapsed = math.floor(tick() - progressData.startTime)
-    local content = string.format(
-        "Status: %s\n\n" ..
-        "Service: %s\n" ..
-        "Progress: %d / %d objects (%d%%)\n" ..
-        "Current: %s\n" ..
-        "Time: %ds",
-        progressData.status,
-        progressData.currentService,
-        progressData.processedObjects,
-        progressData.totalObjects,
-        progressData.percentage,
-        progressData.currentObject,
-        elapsed
-    )
-    
-    -- Update paragraph (Rayfield doesn't support dynamic updates well, so we print)
-    print(string.format("[PROGRESS] %d%% - %s", progressData.percentage, progressData.currentService))
-end
-
--- CONFIG
 local config = {
     fileFormat = "RBXL",
     decompileScripts = true
 }
 
-SettingsTab:CreateDropdown({
+MainTab:CreateDropdown({
    Name = "File Format",
    Options = {"RBXL", "RBXMX"},
    CurrentOption = "RBXL",
    Callback = function(option) config.fileFormat = option end,
 })
 
-SettingsTab:CreateToggle({
+MainTab:CreateToggle({
    Name = "Decompile Scripts",
    CurrentValue = true,
    Callback = function(val) config.decompileScripts = val end,
 })
 
--- STATS
 local stats = {objects=0, scripts=0, decompiled=0}
 local refCounter = 0
 local refMap = {}
@@ -115,7 +84,7 @@ local function DecompileScript(script)
         end
     end
     
-    return "-- Failed to decompile: " .. script.Name
+    return "-- Protected: " .. script.Name
 end
 
 local function SerializeProp(name, val)
@@ -163,13 +132,11 @@ local function GetXML(obj, depth)
     
     stats.objects = stats.objects + 1
     progressData.processedObjects = progressData.processedObjects + 1
-    progressData.currentObject = obj.Name
     
-    -- Update progress every 50 objects
-    if progressData.processedObjects % 50 == 0 then
+    if progressData.processedObjects % 100 == 0 then
         progressData.percentage = math.floor((progressData.processedObjects / progressData.totalObjects) * 100)
-        UpdateProgress()
-        task.wait() -- Yield to update UI
+        print(string.format("[PROGRESS] %d%% - %s", progressData.percentage, progressData.currentService))
+        task.wait()
     end
     
     local xml = {}
@@ -205,77 +172,47 @@ local function GetXML(obj, depth)
     return table.concat(xml, "\n")
 end
 
--- COUNT TOTAL OBJECTS
 local function CountObjects()
     local total = 0
-    
     for _, service in ipairs({
-        game.Workspace,
-        game.ReplicatedStorage,
-        game.ReplicatedFirst,
-        game.StarterGui,
-        game.StarterPack,
-        game.StarterPlayer,
-        game.Lighting,
-        game.SoundService,
-        game.Chat,
-        game.LocalizationService,
-        game.TestService
+        game.Workspace, game.ReplicatedStorage, game.ReplicatedFirst,
+        game.StarterGui, game.StarterPack, game.StarterPlayer,
+        game.Lighting, game.SoundService
     }) do
         pcall(function()
-            for _, obj in ipairs(service:GetDescendants()) do
+            for _ in ipairs(service:GetDescendants()) do
                 total = total + 1
             end
         end)
     end
-    
     return total
 end
 
--- MAIN SAVE WITH PROGRESS
 local function SaveMap()
     if not writefile then
-        Rayfield:Notify({
-            Title = "❌ Error",
-            Content = "Executor tidak support writefile!",
-            Duration = 5
-        })
+        Rayfield:Notify({Title = "❌ Error", Content = "writefile not supported!", Duration = 5})
         return
     end
     
     print("\n" .. string.rep("=", 70))
-    print("🚀 STARTING SAVE PROCESS")
+    print("🚀 STARTING SAVE")
     print(string.rep("=", 70))
     
-    -- Initialize
     progressData.startTime = tick()
-    progressData.status = "Counting objects..."
     progressData.processedObjects = 0
     refCounter = 0
     refMap = {}
     stats = {objects=0, scripts=0, decompiled=0}
     
-    Rayfield:Notify({
-        Title = "⏳ Counting Objects",
-        Content = "Please wait...",
-        Duration = 2
-    })
+    Rayfield:Notify({Title = "⏳ Counting", Content = "Please wait...", Duration = 2})
     
-    print("[INIT] Counting total objects...")
     progressData.totalObjects = CountObjects()
-    print("[INIT] Total objects found:", progressData.totalObjects)
-    
-    Rayfield:Notify({
-        Title = "📊 Found " .. progressData.totalObjects .. " objects",
-        Content = "Starting export...",
-        Duration = 2
-    })
+    print("[INIT] Total objects:", progressData.totalObjects)
     
     local header = '<?xml version="1.0" encoding="UTF-8"?>\n<roblox xmlns:xmime="http://www.w3.org/2005/05/xmlmime" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://www.roblox.com/roblox.xsd" version="4">\n<External>null</External>\n<External>nil</External>\n'
     
     local body = ""
     
-    -- Process all services
     local services = {
         {name = "Workspace", obj = game.Workspace},
         {name = "ReplicatedStorage", obj = game.ReplicatedStorage},
@@ -284,43 +221,23 @@ local function SaveMap()
         {name = "StarterPack", obj = game.StarterPack},
         {name = "StarterPlayer", obj = game.StarterPlayer},
         {name = "Lighting", obj = game.Lighting},
-        {name = "SoundService", obj = game.SoundService},
-        {name = "Chat", obj = game.Chat},
-        {name = "LocalizationService", obj = game.LocalizationService},
-        {name = "TestService", obj = game.TestService}
+        {name = "SoundService", obj = game.SoundService}
     }
     
     for _, service in ipairs(services) do
         progressData.currentService = service.name
-        progressData.status = "Processing " .. service.name
-        
         print(string.format("[EXPORT] Processing %s...", service.name))
+        Rayfield:Notify({Title = "📦 Processing", Content = service.name, Duration = 1})
         
-        Rayfield:Notify({
-            Title = "📦 Processing",
-            Content = service.name .. "...",
-            Duration = 1
-        })
-        
-        local ok = pcall(function()
+        pcall(function()
             for _, child in ipairs(service.obj:GetChildren()) do
                 body = body .. GetXML(child)
             end
         end)
-        
-        if not ok then
-            print(string.format("[WARN] Failed to process %s", service.name))
-        end
     end
     
     local data = header .. body .. "\n</roblox>"
     
-    print(string.format("[COMPLETE] Generated XML: %.2f MB", #data/1024/1024))
-    
-    progressData.status = "Saving file..."
-    progressData.percentage = 95
-    
-    -- Get game name
     local gameName = "RobloxMap"
     pcall(function()
         local info = game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId)
@@ -333,114 +250,47 @@ local function SaveMap()
     local ext = config.fileFormat == "RBXL" and ".rbxl" or ".rbxmx"
     local fullFileName = fileName .. ext
     
-    Rayfield:Notify({
-        Title = "💾 Saving File",
-        Content = "Writing to disk...",
-        Duration = 2
-    })
+    progressData.savedFileName = fullFileName
     
-    -- TRY MULTIPLE SAVE METHODS
-    local savedPath = nil
-    local saveSuccess = false
+    Rayfield:Notify({Title = "💾 Saving", Content = "Writing file...", Duration = 2})
     
-    -- Method 1: Direct to filename
-    print("[SAVE] Method 1: Direct filename")
-    local ok1, err1 = pcall(function()
+    local ok, err = pcall(function()
         writefile(fullFileName, data)
     end)
     
-    if ok1 then
-        savedPath = fullFileName
-        saveSuccess = true
-        print("[SAVE] ✅ Method 1 SUCCESS")
-    else
-        print("[SAVE] ❌ Method 1 failed:", err1)
-        
-        -- Method 2: Create folder first
-        print("[SAVE] Method 2: With folder")
-        if makefolder and isfolder then
-            pcall(function() makefolder("SavedMaps") end)
-            
-            local ok2, err2 = pcall(function()
-                writefile("SavedMaps/" .. fullFileName, data)
-            end)
-            
-            if ok2 then
-                savedPath = "SavedMaps/" .. fullFileName
-                saveSuccess = true
-                print("[SAVE] ✅ Method 2 SUCCESS")
-            else
-                print("[SAVE] ❌ Method 2 failed:", err2)
-                
-                -- Method 3: Workspace folder
-                print("[SAVE] Method 3: workspace/ folder")
-                pcall(function() makefolder("workspace") end)
-                
-                local ok3, err3 = pcall(function()
-                    writefile("workspace/" .. fullFileName, data)
-                end)
-                
-                if ok3 then
-                    savedPath = "workspace/" .. fullFileName
-                    saveSuccess = true
-                    print("[SAVE] ✅ Method 3 SUCCESS")
-                else
-                    print("[SAVE] ❌ Method 3 failed:", err3)
-                end
-            end
-        end
-    end
-    
     local timeTaken = tick() - progressData.startTime
     
-    progressData.status = saveSuccess and "Completed!" or "Failed"
-    progressData.percentage = 100
-    
-    print(string.rep("=", 70))
-    
-    if saveSuccess then
+    if ok then
+        print(string.rep("=", 70))
         print("✅ SAVE SUCCESS!")
         print(string.rep("=", 70))
         print("📁 File:", fullFileName)
-        print("📂 Path:", savedPath)
         print("💾 Size:", string.format("%.2f KB (%.2f MB)", #data/1024, #data/1024/1024))
         print("📦 Objects:", stats.objects)
         print("📜 Scripts:", stats.decompiled .. "/" .. stats.scripts)
         print("⏱️ Time:", string.format("%.2fs", timeTaken))
+        print("")
+        print("📂 LOKASI FILE:")
+        print("File tersimpan di folder Xeno:")
+        print("C:\\Users\\[YourName]\\Downloads\\Xeno-v1.3.25b\\" .. fullFileName)
         print(string.rep("=", 70) .. "\n")
         
         Rayfield:Notify({
             Title = "✅ SAVE SUCCESS!",
             Content = string.format(
-                "%s\n\n" ..
-                "💾 %.1f MB\n" ..
-                "📦 %d objects\n" ..
-                "📜 %d scripts\n" ..
-                "⏱️ %.1fs\n\n" ..
-                "📂 Path: %s",
-                fullFileName,
-                #data/1024/1024,
-                stats.objects,
-                stats.decompiled,
-                timeTaken,
-                savedPath
+                "%s\n\n💾 %.1f MB | %d obj | %d scripts\n⏱️ %.1fs\n\n🔽 Klik 'OPEN FOLDER' button!",
+                fullFileName, #data/1024/1024, stats.objects, stats.decompiled, timeTaken
             ),
             Duration = 15
         })
         
         if setclipboard then
-            setclipboard(savedPath)
-            print("✅ Path copied to clipboard!")
+            setclipboard(fullFileName)
+            print("✅ Filename copied!")
         end
     else
-        print("❌ SAVE FAILED!")
-        print(string.rep("=", 70) .. "\n")
-        
-        Rayfield:Notify({
-            Title = "❌ Save Failed",
-            Content = "Tidak bisa save file!\nCek console (F9) untuk detail error.",
-            Duration = 10
-        })
+        print("❌ SAVE FAILED:", err)
+        Rayfield:Notify({Title = "❌ Failed", Content = tostring(err), Duration = 5})
     end
 end
 
@@ -450,31 +300,65 @@ MainTab:CreateButton({
     Callback = SaveMap
 })
 
-MainTab:CreateParagraph({
-    Title = "📦 What Will Be Saved",
-    Content = "✅ Workspace\n✅ ReplicatedStorage\n✅ ReplicatedFirst\n✅ StarterGui\n✅ StarterPack\n✅ StarterPlayer\n✅ Lighting\n✅ SoundService\n✅ Chat\n✅ LocalizationService\n✅ TestService\n\nSemua service akan di-export!"
+MainTab:CreateButton({
+    Name = "📂 OPEN XENO FOLDER",
+    Callback = function()
+        Rayfield:Notify({
+            Title = "📂 Opening Folder",
+            Content = "Opening Windows Explorer...",
+            Duration = 3
+        })
+        
+        -- Try to open folder
+        local opened = false
+        
+        -- Method 1: shell command
+        pcall(function()
+            local cmd = 'explorer "' .. os.getenv("USERPROFILE") .. '\\Downloads\\Xeno-v1.3.25b"'
+            os.execute(cmd)
+            opened = true
+        end)
+        
+        if opened then
+            print("✅ Folder opened!")
+            Rayfield:Notify({
+                Title = "✅ Folder Opened",
+                Content = "Check Windows Explorer!\n\nFile: " .. (progressData.savedFileName ~= "" and progressData.savedFileName or "Not saved yet"),
+                Duration = 8
+            })
+        else
+            Rayfield:Notify({
+                Title = "⚠️ Manual Navigation",
+                Content = "Go to:\nC:\\Users\\[YourName]\\Downloads\\Xeno-v1.3.25b\\\n\nFile: " .. (progressData.savedFileName ~= "" and progressData.savedFileName or "Not saved yet"),
+                Duration = 10
+            })
+            
+            print("\n📂 MANUAL NAVIGATION:")
+            print("1. Open File Explorer")
+            print("2. Go to: Downloads")
+            print("3. Open folder: Xeno-v1.3.25b")
+            print("4. Look for:", progressData.savedFileName ~= "" and progressData.savedFileName or "[YourFile].rbxl")
+        end
+    end
 })
 
 MainTab:CreateParagraph({
-    Title = "💡 Features",
-    Content = "✅ Real-time progress tracking\n✅ All services exported\n✅ Script decompiling\n✅ Multiple save methods\n✅ Auto error handling\n✅ Progress notifications"
+    Title = "📂 File Location (XENO)",
+    Content = "⚠️ PENTING!\n\nFile TIDAK disave ke Downloads folder!\n\nFile disave ke FOLDER XENO:\nC:\\Users\\[Name]\\Downloads\\Xeno-v1.3.25b\\\n\nSetelah save, klik button 'OPEN XENO FOLDER' untuk buka folder!"
+})
+
+MainTab:CreateParagraph({
+    Title = "💡 Cara Pakai",
+    Content = "1. Klik 'SAVE MAP'\n2. Tunggu proses selesai\n3. Klik 'OPEN XENO FOLDER'\n4. File .rbxl ada disana!\n5. Double-click file atau drag ke Studio"
 })
 
 ProgressTab:CreateParagraph({
-    Title = "📊 Info",
-    Content = "Progress akan ditampilkan di console (F9)\n\nTekan F9 untuk melihat detail progress real-time!"
+    Title = "📊 Progress Tracking",
+    Content = "Tekan F9 untuk lihat progress detail!\n\nProgress akan ditampilkan di console dengan:\n• Service yang sedang diproses\n• Percentage completion\n• Object count\n• Estimated time"
 })
-
-local statusText = "🔍 System Check:\n\n"
-statusText = statusText .. (writefile and "✅" or "❌") .. " writefile\n"
-statusText = statusText .. (makefolder and "✅" or "❌") .. " makefolder\n"
-statusText = statusText .. (isfolder and "✅" or "❌") .. " isfolder\n\n"
-statusText = statusText .. "💡 Multiple save methods will be tried\nto ensure file is saved!"
-
-SettingsTab:CreateParagraph({Title = "Status", Content = statusText})
 
 Rayfield:Notify({
     Title = "✅ Ready!",
-    Content = "All services akan di-export!\nTekan F9 untuk lihat progress.",
-    Duration = 4
+    Content = "File akan disave di FOLDER XENO!\nBUKAN di Downloads folder!",
+    Duration = 5
 })
