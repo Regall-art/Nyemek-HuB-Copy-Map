@@ -1,28 +1,26 @@
--- NYEMEK HUB - UPLOAD TO FILE HOSTING
--- Get direct download link (MediaFire style)
+-- NYEMEK HUB - WEB UPLOAD (FIXED)
+-- Proper file download with correct headers
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local Window = Rayfield:CreateWindow({
-   Name = "Nyemek Hub | Web Upload",
-   LoadingTitle = "Loading Web Uploader...",
-   LoadingSubtitle = "Upload & Get Download Link",
+   Name = "Nyemek Hub | Web Upload Fixed",
+   LoadingTitle = "Loading Fixed Uploader...",
+   LoadingSubtitle = "Proper Download Links",
    ConfigurationSaving = { Enabled = false }
 })
 
 local MainTab = Window:CreateTab("💾 Save", 4483362458)
-local ProgressTab = Window:CreateTab("📊 Progress", 4483362458)
 local SettingsTab = Window:CreateTab("⚙️ Settings", 4483362458)
 
 local webhookUrl = ""
 
 SettingsTab:CreateInput({
    Name = "Discord Webhook (Optional)",
-   PlaceholderText = "Untuk notifikasi link download...",
+   PlaceholderText = "Untuk notifikasi...",
    Callback = function(text) webhookUrl = text:match("^%s*(.-)%s*$") end,
 })
 
--- DETECT HTTP
 local httpRequest = nil
 if syn and syn.request then httpRequest = syn.request
 elseif request then httpRequest = request
@@ -32,20 +30,9 @@ end
 
 local HttpService = game:GetService("HttpService")
 
--- PROGRESS
-local progressData = {
-    currentService = "Idle",
-    totalObjects = 0,
-    processedObjects = 0,
-    percentage = 0,
-    status = "Ready"
-}
-
--- CONFIG
 local config = {
     fileFormat = "RBXL",
-    decompileScripts = true,
-    uploadMethod = "tmpfiles" -- tmpfiles, fileio, or catbox
+    decompileScripts = true
 }
 
 SettingsTab:CreateDropdown({
@@ -55,23 +42,18 @@ SettingsTab:CreateDropdown({
    Callback = function(option) config.fileFormat = option end,
 })
 
-SettingsTab:CreateDropdown({
-   Name = "Upload Service",
-   Options = {"tmpfiles.org (24h)", "file.io (1 download)", "catbox.moe (1 year)"},
-   CurrentOption = "tmpfiles.org (24h)",
-   Callback = function(option)
-       if option:match("tmpfiles") then config.uploadMethod = "tmpfiles"
-       elseif option:match("file.io") then config.uploadMethod = "fileio"
-       elseif option:match("catbox") then config.uploadMethod = "catbox"
-       end
-   end,
-})
-
 SettingsTab:CreateToggle({
    Name = "Decompile Scripts",
    CurrentValue = true,
    Callback = function(val) config.decompileScripts = val end,
 })
+
+local progressData = {
+    currentService = "Idle",
+    totalObjects = 0,
+    processedObjects = 0,
+    percentage = 0
+}
 
 local stats = {objects=0, scripts=0, decompiled=0}
 local refCounter = 0
@@ -91,7 +73,7 @@ local function escapeXML(str)
 end
 
 local function DecompileScript(script)
-    if not config.decompileScripts then return "-- Decompiling disabled" end
+    if not config.decompileScripts then return "-- Disabled" end
     stats.scripts = stats.scripts + 1
     
     local ok, src = pcall(function() return script.Source end)
@@ -159,7 +141,7 @@ local function GetXML(obj, depth)
     
     if progressData.processedObjects % 100 == 0 then
         progressData.percentage = math.floor((progressData.processedObjects / progressData.totalObjects) * 100)
-        print(string.format("[PROGRESS] %d%% - %s", progressData.percentage, progressData.currentService))
+        print(string.format("[PROGRESS] %d%%", progressData.percentage))
         task.wait()
     end
     
@@ -199,9 +181,7 @@ end
 local function CountObjects()
     local total = 0
     for _, service in ipairs({
-        game.Workspace, game.ReplicatedStorage, game.ReplicatedFirst,
-        game.StarterGui, game.StarterPack, game.StarterPlayer,
-        game.Lighting, game.SoundService
+        game.Workspace, game.ReplicatedStorage, game.StarterGui, game.Lighting
     }) do
         pcall(function()
             for _ in ipairs(service:GetDescendants()) do total = total + 1 end
@@ -210,11 +190,35 @@ local function CountObjects()
     return total
 end
 
--- UPLOAD TO TMPFILES.ORG
-local function UploadToTmpFiles(fileName, fileData)
-    print("[UPLOAD] Uploading to tmpfiles.org...")
+-- UPLOAD TO GOFILE (BEST OPTION - 1 YEAR STORAGE)
+local function UploadToGoFile(fileName, fileData)
+    print("[UPLOAD] Getting GoFile server...")
     
-    local boundary = "----WebKitFormBoundary" .. tostring(math.random(100000000, 999999999))
+    -- Get server
+    local ok1, resp1 = pcall(function()
+        return httpRequest({
+            Url = "https://api.gofile.io/servers",
+            Method = "GET"
+        })
+    end)
+    
+    if not ok1 or not resp1.Body then 
+        print("[ERROR] Cannot get server")
+        return nil 
+    end
+    
+    local serverData = HttpService:JSONDecode(resp1.Body)
+    if serverData.status ~= "ok" or not serverData.data or not serverData.data.servers then
+        print("[ERROR] Invalid server response")
+        return nil
+    end
+    
+    local server = serverData.data.servers[1].name
+    print("[UPLOAD] Using server:", server)
+    print("[UPLOAD] Uploading file...")
+    
+    -- Upload
+    local boundary = "----GoFileBoundary" .. tostring(math.random(100000, 999999))
     
     local payload = "--" .. boundary .. "\r\n"
     payload = payload .. 'Content-Disposition: form-data; name="file"; filename="' .. fileName .. '"\r\n'
@@ -222,9 +226,9 @@ local function UploadToTmpFiles(fileName, fileData)
     payload = payload .. fileData .. "\r\n"
     payload = payload .. "--" .. boundary .. "--\r\n"
     
-    local ok, response = pcall(function()
+    local ok2, resp2 = pcall(function()
         return httpRequest({
-            Url = "https://tmpfiles.org/api/v1/upload",
+            Url = "https://" .. server .. ".gofile.io/contents/uploadfile",
             Method = "POST",
             Headers = {
                 ["Content-Type"] = "multipart/form-data; boundary=" .. boundary
@@ -233,24 +237,21 @@ local function UploadToTmpFiles(fileName, fileData)
         })
     end)
     
-    if ok and response and response.Body then
-        local data = HttpService:JSONDecode(response.Body)
-        if data.status == "success" and data.data and data.data.url then
-            local url = data.data.url
-            -- Convert to direct download
-            local downloadUrl = url:gsub("tmpfiles.org/", "tmpfiles.org/dl/")
-            return downloadUrl, url
+    if ok2 and resp2.Body then
+        local data = HttpService:JSONDecode(resp2.Body)
+        if data.status == "ok" and data.data and data.data.downloadPage then
+            return data.data.downloadPage
         end
     end
     
-    return nil, nil
+    return nil
 end
 
--- UPLOAD TO FILE.IO
-local function UploadToFileIO(fileName, fileData)
-    print("[UPLOAD] Uploading to file.io...")
+-- ALTERNATIVE: ANONFILES
+local function UploadToAnonFiles(fileName, fileData)
+    print("[UPLOAD] Uploading to anonfiles.com...")
     
-    local boundary = "----Boundary" .. tostring(math.random(100000, 999999))
+    local boundary = "----AnonBoundary" .. tostring(math.random(100000, 999999))
     
     local payload = "--" .. boundary .. "\r\n"
     payload = payload .. 'Content-Disposition: form-data; name="file"; filename="' .. fileName .. '"\r\n'
@@ -258,9 +259,9 @@ local function UploadToFileIO(fileName, fileData)
     payload = payload .. fileData .. "\r\n"
     payload = payload .. "--" .. boundary .. "--\r\n"
     
-    local ok, response = pcall(function()
+    local ok, resp = pcall(function()
         return httpRequest({
-            Url = "https://file.io",
+            Url = "https://api.anonfiles.com/upload",
             Method = "POST",
             Headers = {
                 ["Content-Type"] = "multipart/form-data; boundary=" .. boundary
@@ -269,72 +270,32 @@ local function UploadToFileIO(fileName, fileData)
         })
     end)
     
-    if ok and response and response.Body then
-        local data = HttpService:JSONDecode(response.Body)
-        if data.success and data.link then
-            return data.link, data.link
+    if ok and resp.Body then
+        local data = HttpService:JSONDecode(resp.Body)
+        if data.status and data.data and data.data.file and data.data.file.url and data.data.file.url.full then
+            return data.data.file.url.full
         end
     end
     
-    return nil, nil
+    return nil
 end
 
--- UPLOAD TO CATBOX.MOE
-local function UploadToCatbox(fileName, fileData)
-    print("[UPLOAD] Uploading to catbox.moe...")
-    
-    local boundary = "----CatboxBoundary" .. tostring(math.random(100000, 999999))
-    
-    local payload = "--" .. boundary .. "\r\n"
-    payload = payload .. 'Content-Disposition: form-data; name="reqtype"\r\n\r\nfileupload\r\n'
-    payload = payload .. "--" .. boundary .. "\r\n"
-    payload = payload .. 'Content-Disposition: form-data; name="fileToUpload"; filename="' .. fileName .. '"\r\n'
-    payload = payload .. "Content-Type: application/octet-stream\r\n\r\n"
-    payload = payload .. fileData .. "\r\n"
-    payload = payload .. "--" .. boundary .. "--\r\n"
-    
-    local ok, response = pcall(function()
-        return httpRequest({
-            Url = "https://catbox.moe/user/api.php",
-            Method = "POST",
-            Headers = {
-                ["Content-Type"] = "multipart/form-data; boundary=" .. boundary
-            },
-            Body = payload
-        })
-    end)
-    
-    if ok and response and response.Body then
-        local url = response.Body:match("https://[%w%.%-_/]+")
-        if url then
-            return url, url
-        end
-    end
-    
-    return nil, nil
-end
-
--- SEND TO DISCORD
-local function SendToDiscord(fileName, downloadUrl, viewUrl, fileSize)
+local function SendToDiscord(fileName, downloadUrl, fileSize)
     if webhookUrl == "" then return end
     
     local embedData = {
-        username = "Nyemek Hub - Web Upload",
+        username = "Nyemek Hub",
         embeds = {{
-            title = "📤 Map Uploaded Successfully!",
-            description = "**Your map is ready to download!**\n\nClick the link below to download the file.",
+            title = "📤 Map Ready to Download!",
+            description = "**Click link below to download**",
             color = 5763719,
             fields = {
                 {name = "📁 File", value = "`" .. fileName .. "`", inline = false},
                 {name = "💾 Size", value = string.format("%.2f MB", fileSize/1024/1024), inline = true},
                 {name = "📦 Objects", value = tostring(stats.objects), inline = true},
-                {name = "📜 Scripts", value = stats.decompiled .. "/" .. stats.scripts, inline = true},
-                {name = "🔗 DOWNLOAD LINK", value = "[**>>> CLICK HERE TO DOWNLOAD <<<**](" .. downloadUrl .. ")", inline = false},
-                {name = "🌐 View Page", value = "[Click Here](" .. viewUrl .. ")", inline = false},
-                {name = "💡 How to Use", value = "1. Click download link\n2. Save the file\n3. Open Roblox Studio\n4. File → Open from File (RBXL)\n   OR Insert → Insert from File (RBXMX)\n5. Done!", inline = false}
-            },
-            footer = {text = "Nyemek Hub | Web Uploader"},
-            timestamp = os.date("!%Y-%m-%dT%H:%M:%S")
+                {name = "🔗 DOWNLOAD", value = "[**>>> CLICK HERE <<<**](" .. downloadUrl .. ")\n\n**Right-click → Save Link As**\nSave as: `" .. fileName .. "`", inline = false},
+                {name = "💡 How to Import", value = "1. Download file (right-click → save as)\n2. Open Roblox Studio\n3. File → Open from File\n4. Select downloaded file\n5. Done!", inline = false}
+            }
         }}
     }
     
@@ -348,15 +309,14 @@ local function SendToDiscord(fileName, downloadUrl, viewUrl, fileSize)
     end)
 end
 
--- MAIN SAVE & UPLOAD
 local function SaveAndUpload()
     if not httpRequest then
-        Rayfield:Notify({Title = "❌ Error", Content = "HTTP tidak support!", Duration = 5})
+        Rayfield:Notify({Title = "❌ Error", Content = "HTTP not supported!", Duration = 5})
         return
     end
     
     print("\n" .. string.rep("=", 70))
-    print("🚀 STARTING PROCESS")
+    print("🚀 STARTING")
     print(string.rep("=", 70))
     
     progressData.processedObjects = 0
@@ -364,30 +324,23 @@ local function SaveAndUpload()
     refMap = {}
     stats = {objects=0, scripts=0, decompiled=0}
     
-    Rayfield:Notify({Title = "⏳ Counting", Content = "Counting objects...", Duration = 2})
+    Rayfield:Notify({Title = "⏳ Counting", Content = "Please wait...", Duration = 2})
     
     progressData.totalObjects = CountObjects()
-    print("[INIT] Total objects:", progressData.totalObjects)
     
     local header = '<?xml version="1.0" encoding="UTF-8"?>\n<roblox xmlns:xmime="http://www.w3.org/2005/05/xmlmime" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://www.roblox.com/roblox.xsd" version="4">\n<External>null</External>\n<External>nil</External>\n'
     
     local body = ""
     
-    local services = {
+    for _, service in ipairs({
         {name = "Workspace", obj = game.Workspace},
         {name = "ReplicatedStorage", obj = game.ReplicatedStorage},
-        {name = "ReplicatedFirst", obj = game.ReplicatedFirst},
         {name = "StarterGui", obj = game.StarterGui},
-        {name = "StarterPack", obj = game.StarterPack},
-        {name = "StarterPlayer", obj = game.StarterPlayer},
-        {name = "Lighting", obj = game.Lighting},
-        {name = "SoundService", obj = game.SoundService}
-    }
-    
-    for _, service in ipairs(services) do
+        {name = "Lighting", obj = game.Lighting}
+    }) do
         progressData.currentService = service.name
-        print(string.format("[EXPORT] Processing %s...", service.name))
-        Rayfield:Notify({Title = "📦 Processing", Content = service.name, Duration = 1})
+        print("[EXPORT]", service.name)
+        Rayfield:Notify({Title = "📦 " .. service.name, Content = "Processing...", Duration = 1})
         
         pcall(function()
             for _, child in ipairs(service.obj:GetChildren()) do
@@ -397,8 +350,6 @@ local function SaveAndUpload()
     end
     
     local data = header .. body .. "\n</roblox>"
-    
-    print(string.format("[COMPLETE] XML generated: %.2f MB", #data/1024/1024))
     
     local gameName = "RobloxMap"
     pcall(function()
@@ -412,99 +363,75 @@ local function SaveAndUpload()
     local ext = config.fileFormat == "RBXL" and ".rbxl" or ".rbxmx"
     local fullFileName = fileName .. ext
     
-    Rayfield:Notify({Title = "📤 Uploading", Content = "Uploading to web...", Duration = 3})
+    Rayfield:Notify({Title = "📤 Uploading", Content = "Please wait...", Duration = 3})
     
-    local downloadUrl, viewUrl
-    
-    if config.uploadMethod == "tmpfiles" then
-        downloadUrl, viewUrl = UploadToTmpFiles(fullFileName, data)
-    elseif config.uploadMethod == "fileio" then
-        downloadUrl, viewUrl = UploadToFileIO(fullFileName, data)
-    elseif config.uploadMethod == "catbox" then
-        downloadUrl, viewUrl = UploadToCatbox(fullFileName, data)
-    end
+    local downloadUrl = UploadToGoFile(fullFileName, data)
     
     if not downloadUrl then
-        print("[WARN] Primary upload failed, trying alternatives...")
-        downloadUrl, viewUrl = UploadToTmpFiles(fullFileName, data)
-        if not downloadUrl then
-            downloadUrl, viewUrl = UploadToFileIO(fullFileName, data)
-        end
-        if not downloadUrl then
-            downloadUrl, viewUrl = UploadToCatbox(fullFileName, data)
-        end
+        print("[RETRY] Trying anonfiles...")
+        downloadUrl = UploadToAnonFiles(fullFileName, data)
     end
     
-    print(string.rep("=", 70))
-    
     if downloadUrl then
+        print(string.rep("=", 70))
         print("✅ UPLOAD SUCCESS!")
         print(string.rep("=", 70))
         print("📁 File:", fullFileName)
         print("💾 Size:", string.format("%.2f MB", #data/1024/1024))
         print("📦 Objects:", stats.objects)
-        print("📜 Scripts:", stats.decompiled .. "/" .. stats.scripts)
         print("")
         print("🔗 DOWNLOAD LINK:")
         print(downloadUrl)
         print("")
-        print("🌐 VIEW PAGE:")
-        print(viewUrl or downloadUrl)
+        print("💡 HOW TO DOWNLOAD:")
+        print("1. Open link in browser")
+        print("2. Click download button")
+        print("3. OR Right-click link → Save As")
+        print("4. Save as:", fullFileName)
         print(string.rep("=", 70) .. "\n")
         
         if setclipboard then
             setclipboard(downloadUrl)
-            print("✅ Download link copied to clipboard!")
+            print("✅ Link copied!")
         end
         
-        SendToDiscord(fullFileName, downloadUrl, viewUrl or downloadUrl, #data)
+        SendToDiscord(fullFileName, downloadUrl, #data)
         
-        local msg = string.format(
-            "✅ UPLOAD SUCCESS!\n\n" ..
-            "📁 %s\n" ..
-            "💾 %.1f MB\n" ..
-            "📦 %d obj | %d scripts\n\n" ..
-            "🔗 Link copied to clipboard!\n" ..
-            "%s\n\n" ..
-            "Download dan import ke Studio!",
-            fullFileName, #data/1024/1024, stats.objects, stats.decompiled,
-            downloadUrl:sub(1, 50) .. "..."
-        )
-        
-        Rayfield:Notify({Title = "✅ Upload Success!", Content = msg, Duration = 20})
+        Rayfield:Notify({
+            Title = "✅ UPLOAD SUCCESS!",
+            Content = string.format(
+                "%s\n\n💾 %.1f MB | %d obj\n\n🔗 Link copied!\n\nOpen in browser & download!",
+                fullFileName, #data/1024/1024, stats.objects
+            ),
+            Duration = 20
+        })
     else
-        print("❌ UPLOAD FAILED!")
-        print(string.rep("=", 70) .. "\n")
+        print("❌ ALL UPLOAD METHODS FAILED")
         Rayfield:Notify({
             Title = "❌ Upload Failed",
-            Content = "Semua upload method gagal!\nCek console (F9)",
+            Content = "All methods failed!\nCheck F9 console",
             Duration = 8
         })
     end
 end
 
 MainTab:CreateButton({
-    Name = "🌐 SAVE & UPLOAD TO WEB",
+    Name = "🌐 SAVE & UPLOAD",
     Callback = SaveAndUpload
 })
 
 MainTab:CreateParagraph({
-    Title = "🌐 How It Works",
-    Content = "1. Script generate map file\n2. Upload ke web hosting\n3. Dapat link download\n4. Link auto-copied\n5. Link dikirim ke Discord (optional)\n6. Download dari browser\n7. Import ke Studio"
+    Title = "💡 How to Download",
+    Content = "1. Klik SAVE & UPLOAD\n2. Wait for upload\n3. Link akan di-copy\n4. Paste link di browser\n5. KLIK DOWNLOAD button di website\n6. OR Right-click → Save Link As\n7. Save file\n8. Import to Roblox Studio"
 })
 
 MainTab:CreateParagraph({
-    Title = "💡 Upload Services",
-    Content = "📌 tmpfiles.org:\n• File expire: 24 hours\n• No registration\n• Fast upload\n\n📌 file.io:\n• File expire: 1 download only\n• More private\n\n📌 catbox.moe:\n• File expire: 1 year\n• Best for long-term"
-})
-
-ProgressTab:CreateParagraph({
-    Title = "📊 Progress",
-    Content = "Progress ditampilkan di console (F9)\n\nTekan F9 untuk lihat:\n• Service yang diproses\n• Percentage\n• Object count\n• Upload progress"
+    Title = "📥 Important!",
+    Content = "⚠️ JANGAN BUKA LINK LANGSUNG!\n\nCara yang benar:\n1. Paste link di browser\n2. Tunggu halaman load\n3. KLIK tombol DOWNLOAD\n4. OR Right-click link → Save As\n5. Pilih lokasi save\n6. Save dengan extension .rbxl atau .rbxmx"
 })
 
 Rayfield:Notify({
     Title = "✅ Ready!",
-    Content = "File akan di-upload ke web!\nLink download akan auto-copied!",
-    Duration = 5
+    Content = "Upload uses GoFile (1 year storage)\nLink will be copied!",
+    Duration = 4
 })
