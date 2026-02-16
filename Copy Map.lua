@@ -1,118 +1,56 @@
--- NYEMEK HUB - WARPAH STYLE MAP COPIER
--- Save RBXL + Full Decompile
+-- NYEMEK HUB - SAVE TO DOWNLOADS FOLDER
+-- File langsung masuk ke C:\Users\[Name]\Downloads\
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local Window = Rayfield:CreateWindow({
-   Name = "Nyemek Hub | Warpah Style",
-   LoadingTitle = "Loading Map Copier...",
-   LoadingSubtitle = "Save RBXL + Scripts",
+   Name = "Nyemek Hub | Save to Downloads",
+   LoadingTitle = "Loading Map Saver...",
+   LoadingSubtitle = "Direct to Downloads Folder",
    ConfigurationSaving = { Enabled = false }
 })
 
-local StatusTab = Window:CreateTab("📊 Status", 4483362458)
-local OptionsTab = Window:CreateTab("⚙️ Options", 4483362458)
-local SaveTab = Window:CreateTab("💾 Save", 4483362458)
+local MainTab = Window:CreateTab("💾 Save", 4483362458)
+local SettingsTab = Window:CreateTab("⚙️ Settings", 4483362458)
 
 -- DETECT CAPABILITIES
 local hasWrite = writefile ~= nil
-local hasMakeFolder = makefolder ~= nil
-local hasIsFolder = isfolder ~= nil
 
--- CONFIG
+-- SETTINGS
 local config = {
-    includeTerrain = false,
-    saveScripts = true,
-    antiCopy = false,
-    fileFormat = "RBXL" -- RBXL or RBXMX
+    fileFormat = "RBXL",
+    decompileScripts = true,
+    saveWorkspace = true,
+    saveReplicatedStorage = true
 }
+
+SettingsTab:CreateDropdown({
+   Name = "File Format",
+   Options = {"RBXL", "RBXMX"},
+   CurrentOption = "RBXL",
+   Callback = function(option) config.fileFormat = option end,
+})
+
+SettingsTab:CreateToggle({
+   Name = "Decompile Scripts",
+   CurrentValue = true,
+   Callback = function(val) config.decompileScripts = val end,
+})
+
+SettingsTab:CreateToggle({
+   Name = "Save Workspace",
+   CurrentValue = true,
+   Callback = function(val) config.saveWorkspace = val end,
+})
+
+SettingsTab:CreateToggle({
+   Name = "Save ReplicatedStorage",
+   CurrentValue = true,
+   Callback = function(val) config.saveReplicatedStorage = val end,
+})
 
 -- STATS
-local stats = {
-    gameName = "Unknown",
-    placeId = 0,
-    totalObjects = 0,
-    status = "Idle",
-    progress = 0
-}
-
--- UPDATE GAME INFO
-local function UpdateGameInfo()
-    pcall(function()
-        stats.placeId = game.PlaceId
-        local info = game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId)
-        if info then
-            stats.gameName = info.Name
-        end
-    end)
-    
-    -- Count objects
-    stats.totalObjects = 0
-    for _, obj in ipairs(game.Workspace:GetDescendants()) do
-        stats.totalObjects = stats.totalObjects + 1
-    end
-end
-
-UpdateGameInfo()
-
--- STATUS DISPLAY
-StatusTab:CreateParagraph({
-    Title = "📊 STATUS",
-    Content = "Status: " .. stats.status
-})
-
-local gameInfoText = string.format("🎮 Game: %s\n🆔 PlaceID: %d\n📦 Objects: %d",
-    stats.gameName, stats.placeId, stats.totalObjects)
-
-StatusTab:CreateParagraph({
-    Title = "🎮 GAME INFO",
-    Content = gameInfoText
-})
-
-local execInfoText = string.format("✅ Executor: Xeno | saveinstance: ✅\n⚠️ Anti-Copy: %s",
-    config.antiCopy and "Protected" or "Not Protected")
-
-StatusTab:CreateParagraph({
-    Title = "💻 EXECUTOR INFO",
-    Content = execInfoText
-})
-
--- OPTIONS
-OptionsTab:CreateToggle({
-   Name = "Include Terrain",
-   CurrentValue = false,
-   Callback = function(val) 
-       config.includeTerrain = val
-       Rayfield:Notify({
-           Title = val and "✅ Terrain ON" or "⚠️ Terrain OFF",
-           Content = val and "Terrain akan disimpan" or "Terrain tidak disimpan",
-           Duration = 2
-       })
-   end,
-})
-
-OptionsTab:CreateToggle({
-   Name = "Save Scripts (Decompile)",
-   CurrentValue = true,
-   Callback = function(val) config.saveScripts = val end,
-})
-
-OptionsTab:CreateToggle({
-   Name = "Anti-Copy Protection",
-   CurrentValue = false,
-   Callback = function(val) config.antiCopy = val end,
-})
-
-OptionsTab:CreateDropdown({
-   Name = "File Format",
-   Options = {"RBXL (Recommended)", "RBXMX (XML)"},
-   CurrentOption = "RBXL (Recommended)",
-   Callback = function(option)
-       config.fileFormat = option:match("RBXL") and "RBXL" or "RBXMX"
-   end,
-})
-
--- SERIALIZATION
+local stats = {objects=0, scripts=0, decompiled=0}
 local refCounter = 0
 local refMap = {}
 
@@ -130,22 +68,32 @@ local function escapeXML(str)
 end
 
 local function DecompileScript(script)
-    if not config.saveScripts then return "-- Scripts disabled" end
+    if not config.decompileScripts then return "-- Decompiling disabled" end
+    stats.scripts = stats.scripts + 1
     
     local ok, src = pcall(function() return script.Source end)
-    if ok and src and src ~= "" then return src end
+    if ok and src and src ~= "" then
+        stats.decompiled = stats.decompiled + 1
+        return src
+    end
     
     if decompile then
         ok, src = pcall(decompile, script)
-        if ok and src then return src end
+        if ok and src then
+            stats.decompiled = stats.decompiled + 1
+            return src
+        end
     end
     
     if syn and syn.decompile then
         ok, src = pcall(syn.decompile, script)
-        if ok and src then return src end
+        if ok and src then
+            stats.decompiled = stats.decompiled + 1
+            return src
+        end
     end
     
-    return "-- Protected script: " .. script.Name
+    return "-- Failed to decompile: " .. script.Name
 end
 
 local function SerializeProp(name, val)
@@ -169,7 +117,11 @@ local function SerializeProp(name, val)
     elseif t == "boolean" then
         return string.format('<bool name="%s">%s</bool>',name,tostring(val))
     elseif t == "number" then
-        return string.format('<float name="%s">%f</float>',name,val)
+        if math.floor(val) == val then
+            return string.format('<int name="%s">%d</int>',name,val)
+        else
+            return string.format('<float name="%s">%f</float>',name,val)
+        end
     elseif t == "string" then
         return string.format('<string name="%s">%s</string>',name,escapeXML(val))
     elseif t == "Instance" then
@@ -180,26 +132,20 @@ end
 
 local props = {
     "Name","CFrame","Size","Position","Orientation","Color","BrickColor",
-    "Material","Transparency","Reflectance","CanCollide","Anchored",
-    "Shape","MeshId","TextureID","MeshType","Scale","Offset","Visible",
-    "BackgroundColor3","Text","TextColor3","TextSize","Font","Image",
-    "SoundId","Volume","Value","Brightness","Range","C0","C1","Part0","Part1"
+    "Material","Transparency","Reflectance","CanCollide","Anchored","Massless",
+    "Shape","TopSurface","BottomSurface","MeshId","TextureID","MeshType",
+    "Scale","Offset","Visible","BackgroundColor3","BackgroundTransparency",
+    "BorderSizePixel","Text","TextColor3","TextSize","Font","TextWrapped",
+    "Image","ImageColor3","ImageTransparency","SoundId","Volume","Looped",
+    "Value","Brightness","Range","C0","C1","Part0","Part1","Enabled"
 }
-
-local processedCount = 0
 
 local function GetXML(obj, depth)
     depth = depth or 0
     if depth > 200 then return "" end
+    if obj:IsA("Terrain") or obj:IsA("Camera") or obj.ClassName=="Player" then return "" end
     
-    if obj:IsA("Terrain") and not config.includeTerrain then return "" end
-    if obj:IsA("Camera") or obj.ClassName=="Player" then return "" end
-    
-    processedCount = processedCount + 1
-    if processedCount % 100 == 0 then
-        stats.progress = math.floor((processedCount / stats.totalObjects) * 100)
-        stats.status = string.format("Saving... %d%%", stats.progress)
-    end
+    stats.objects = stats.objects + 1
     
     local xml = {}
     table.insert(xml, string.format('<Item class="%s" referent="%s">',obj.ClassName,GetRef(obj)))
@@ -234,7 +180,25 @@ local function GetXML(obj, depth)
     return table.concat(xml, "\n")
 end
 
-local function SaveRBXL()
+-- GET DOWNLOADS PATH
+local function GetDownloadsPath()
+    -- Method 1: Direct path
+    local username = os.getenv("USERNAME") or os.getenv("USER")
+    if username then
+        return "C:/Users/" .. username .. "/Downloads/"
+    end
+    
+    -- Method 2: USERPROFILE
+    local userprofile = os.getenv("USERPROFILE")
+    if userprofile then
+        return userprofile .. "/Downloads/"
+    end
+    
+    -- Fallback: relative path
+    return "../Downloads/"
+end
+
+local function SaveMap()
     if not hasWrite then
         Rayfield:Notify({
             Title = "❌ Error",
@@ -244,107 +208,142 @@ local function SaveRBXL()
         return
     end
     
-    stats.status = "Saving with scripts..."
-    stats.progress = 0
-    processedCount = 0
-    
-    Rayfield:Notify({
-        Title = "⏳ Saving",
-        Content = "Processing map...",
-        Duration = 2
-    })
+    Rayfield:Notify({Title = "⏳ Saving", Content = "Processing map...", Duration = 2})
     
     local startTime = tick()
     refCounter = 0
     refMap = {}
+    stats = {objects=0, scripts=0, decompiled=0}
     
     local header = '<?xml version="1.0" encoding="UTF-8"?>\n<roblox xmlns:xmime="http://www.w3.org/2005/05/xmlmime" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://www.roblox.com/roblox.xsd" version="4">\n<External>null</External>\n<External>nil</External>\n'
     
     local body = ""
     
-    for _, child in ipairs(game.Workspace:GetChildren()) do
-        body = body .. GetXML(child)
+    if config.saveWorkspace then
+        print("[EXPORT] Processing Workspace...")
+        for _, child in ipairs(game.Workspace:GetChildren()) do
+            body = body .. GetXML(child)
+        end
     end
     
-    for _, child in ipairs(game.ReplicatedStorage:GetChildren()) do
-        body = body .. GetXML(child)
+    if config.saveReplicatedStorage then
+        print("[EXPORT] Processing ReplicatedStorage...")
+        for _, child in ipairs(game.ReplicatedStorage:GetChildren()) do
+            body = body .. GetXML(child)
+        end
     end
     
     local data = header .. body .. "\n</roblox>"
     
-    local fileName = stats.gameName:gsub("[^%w%s%-]", ""):gsub("%s+", "_") .. "_" .. os.date("%Y%m%d_%H%M%S")
+    -- Get game name
+    local gameName = "RobloxMap"
+    pcall(function()
+        local info = game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId)
+        if info and info.Name then
+            gameName = info.Name:gsub("[^%w%s%-]", ""):gsub("%s+", "_")
+        end
+    end)
+    
+    local fileName = gameName .. "_" .. os.date("%Y%m%d_%H%M%S")
     local ext = config.fileFormat == "RBXL" and ".rbxl" or ".rbxmx"
     local fullFileName = fileName .. ext
     
+    -- Try to save to Downloads
+    local downloadsPath = GetDownloadsPath()
+    local filePath = downloadsPath .. fullFileName
+    
+    print("[SAVE] Attempting to save to:", filePath)
+    print("[SAVE] File size:", string.format("%.2f KB", #data/1024))
+    
     local success, err = pcall(function()
-        writefile(fullFileName, data)
+        writefile(filePath, data)
     end)
+    
+    if not success then
+        -- Fallback: save to current directory
+        print("[WARN] Failed to save to Downloads, trying current directory...")
+        filePath = fullFileName
+        
+        success, err = pcall(function()
+            writefile(filePath, data)
+        end)
+    end
     
     local timeTaken = tick() - startTime
     
     if success then
-        stats.status = "Saved successfully!"
-        stats.progress = 100
-        
-        print("\n" .. string.rep("=", 60))
-        print("✅ MAP SAVED AS " .. config.fileFormat)
-        print(string.rep("=", 60))
+        print("\n" .. string.rep("=", 70))
+        print("✅ MAP SAVED!")
+        print(string.rep("=", 70))
         print("📁 File:", fullFileName)
-        print("💾 Size:", string.format("%.2f KB", #data/1024))
-        print("📦 Objects:", stats.totalObjects)
+        print("📂 Location:", filePath)
+        print("💾 Size:", string.format("%.2f KB (%.2f MB)", #data/1024, #data/1024/1024))
+        print("📦 Objects:", stats.objects)
+        print("📜 Scripts:", stats.decompiled .. "/" .. stats.scripts)
         print("⏱️ Time:", string.format("%.2fs", timeTaken))
-        print("📂 Location: Xeno root folder")
-        print(string.rep("=", 60) .. "\n")
+        print("")
+        print("💡 HOW TO OPEN:")
+        if config.fileFormat == "RBXL" then
+            print("  1. Go to Downloads folder")
+            print("  2. Double-click the .rbxl file")
+            print("     OR")
+            print("  1. Open Roblox Studio")
+            print("  2. File → Open from File")
+            print("  3. Select the .rbxl file from Downloads")
+        else
+            print("  1. Open Roblox Studio")
+            print("  2. Insert → Insert from File")
+            print("  3. Navigate to Downloads folder")
+            print("  4. Select the .rbxmx file")
+        end
+        print(string.rep("=", 70) .. "\n")
         
         Rayfield:Notify({
-            Title = "✅ Saved!",
-            Content = string.format("%s\n\n💾 %.1f KB\n📦 %d objects\n⏱️ %.1fs\n\n📂 Check Xeno folder!",
-                fullFileName, #data/1024, stats.totalObjects, timeTaken),
-            Duration = 10
+            Title = "✅ Saved to Downloads!",
+            Content = string.format("%s\n\n💾 %.1f KB\n📦 %d objects\n📜 %d/%d scripts\n⏱️ %.1fs\n\n📂 Check Downloads folder!",
+                fullFileName, #data/1024, stats.objects, stats.decompiled, stats.scripts, timeTaken),
+            Duration = 12
         })
         
         if setclipboard then
-            setclipboard(fullFileName)
+            setclipboard(filePath)
+            print("✅ Full path copied to clipboard!")
         end
     else
-        stats.status = "Save failed!"
+        print("[ERROR] Save failed:", err)
         Rayfield:Notify({
-            Title = "❌ Failed",
-            Content = tostring(err),
-            Duration = 5
+            Title = "❌ Save Failed",
+            Content = "Error: " .. tostring(err) .. "\n\nCek console (F9)",
+            Duration = 8
         })
     end
 end
 
-local function QuickSave()
-    config.includeTerrain = false
-    config.saveScripts = false
-    SaveRBXL()
-end
-
--- SAVE BUTTONS
-SaveTab:CreateButton({
-    Name = "💾 SAVE RBXL + LOCALSCRIPT",
-    Callback = SaveRBXL
+-- BUTTONS
+MainTab:CreateButton({
+    Name = "💾 SAVE TO DOWNLOADS",
+    Callback = SaveMap
 })
 
-SaveTab:CreateButton({
-    Name = "⚡ QUICK SAVE (No Options)",
-    Callback = QuickSave
+MainTab:CreateParagraph({
+    Title = "📂 Save Location",
+    Content = "File akan disimpan ke:\nC:\\Users\\[YourName]\\Downloads\\\n\nFile format: " .. config.fileFormat .. "\n\nLangsung bisa dibuka dari folder Downloads!"
 })
 
-SaveTab:CreateParagraph({
-    Title = "💡 How to Use",
-    Content = "1. Configure options (optional)\n2. Click 'SAVE RBXL + LOCALSCRIPT'\n3. Wait for completion\n4. File saved to Xeno root folder\n5. Import to Roblox Studio:\n   • File → Open from File\n   • Select the .rbxl file"
+MainTab:CreateParagraph({
+    Title = "💡 How to Open",
+    Content = "Untuk RBXL:\n• Double-click file di Downloads\n  OR\n• Studio → File → Open from File\n\nUntuk RBXMX:\n• Studio → Insert → Insert from File\n• Navigate to Downloads\n• Select file"
 })
 
-SaveTab:CreateParagraph({
-    Title = "📂 File Location",
-    Content = "Files saved to:\nC:\\Users\\[Name]\\Downloads\\Xeno-v1.3.25b\\\n\nFile format: " .. config.fileFormat .. "\n\nScripts: " .. (config.saveScripts and "Included" or "Not Included")
-})
+local statusText = "🔍 System Status:\n\n"
+statusText = statusText .. (hasWrite and "✅ writefile: Supported\n" or "❌ writefile: NOT Supported\n")
+statusText = statusText .. "\n📂 Target: Downloads folder\n"
+statusText = statusText .. "📝 Format: " .. config.fileFormat
+
+SettingsTab:CreateParagraph({Title = "Status", Content = statusText})
 
 Rayfield:Notify({
     Title = "✅ Ready!",
-    Content = "Warpah Style Map Copier\nClick SAVE to start!",
+    Content = "File akan tersimpan langsung di Downloads!",
     Duration = 4
 })
