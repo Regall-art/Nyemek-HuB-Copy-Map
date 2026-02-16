@@ -1,43 +1,66 @@
+-- NYEMEK HUB - ULTIMATE MAP SAVER (FIXED)
+-- Auto-create folder & Better error handling
+
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local Window = Rayfield:CreateWindow({
    Name = "Nyemek Hub | Map Saver",
-   LoadingTitle = "Loading Ultimate Map Saver...",
-   LoadingSubtitle = "Save Maps Instantly",
+   LoadingTitle = "Loading Map Saver...",
+   LoadingSubtitle = "Auto-Create Folder",
    ConfigurationSaving = { Enabled = false }
 })
 
-local MainTab = Window:CreateTab("💾 Save Map", 4483362458)
+local MainTab = Window:CreateTab("💾 Save", 4483362458)
 local SettingsTab = Window:CreateTab("⚙️ Settings", 4483362458)
-local InfoTab = Window:CreateTab("ℹ️ Info", 4483362458)
+
+-- CHECK FUNCTIONS
+local hasWriteFile = pcall(function() return writefile end) and writefile
+local hasMakeFolder = pcall(function() return makefolder end) and makefolder
+local hasIsFolder = pcall(function() return isfolder end) and isfolder
+local hasListFiles = pcall(function() return listfiles end) and listfiles
+local hasReadFile = pcall(function() return readfile end) and readfile
+
+print("\n=== CAPABILITY CHECK ===")
+print("writefile:", hasWriteFile and "✅" or "❌")
+print("makefolder:", hasMakeFolder and "✅" or "❌")
+print("isfolder:", hasIsFolder and "✅" or "❌")
+print("listfiles:", hasListFiles and "✅" or "❌")
+print("readfile:", hasReadFile and "✅" or "❌")
+print("======================\n")
+
+if not hasWriteFile or not hasMakeFolder or not hasIsFolder then
+    Rayfield:Notify({
+        Title = "❌ Executor Not Supported",
+        Content = "Executor ini tidak support file writing!",
+        Duration = 10
+    })
+end
 
 -- SETTINGS
 local config = {
-    fileFormat = "RBXMX", -- RBXMX atau RBXL
+    fileFormat = "RBXMX",
     decompileScripts = true,
-    saveWorkspace = true,
-    saveReplicatedStorage = true,
-    saveServerScriptService = false,
-    saveServerStorage = false,
-    saveLighting = false,
-    autoOpenFolder = true
+    folderName = "NyemekMaps" -- Nama folder custom
 }
 
--- DETECT CAPABILITIES
-local hasWrite = writefile and makefolder and isfolder and listfiles
+SettingsTab:CreateInput({
+   Name = "Folder Name",
+   PlaceholderText = "NyemekMaps",
+   CurrentValue = "NyemekMaps",
+   Callback = function(text)
+       config.folderName = text:match("^%s*(.-)%s*$")
+       if config.folderName == "" then
+           config.folderName = "NyemekMaps"
+       end
+   end,
+})
 
--- UI CONFIGURATION
 SettingsTab:CreateDropdown({
    Name = "File Format",
-   Options = {"RBXMX (Recommended)", "RBXL (Studio Format)"},
-   CurrentOption = "RBXMX (Recommended)",
+   Options = {"RBXMX", "RBXL"},
+   CurrentOption = "RBXMX",
    Callback = function(option)
-       config.fileFormat = option:match("RBXL") and "RBXL" or "RBXMX"
-       Rayfield:Notify({
-           Title = "✅ Format Changed", 
-           Content = "Save as: ." .. config.fileFormat:lower(),
-           Duration = 2
-       })
+       config.fileFormat = option
    end,
 })
 
@@ -47,55 +70,8 @@ SettingsTab:CreateToggle({
    Callback = function(val) config.decompileScripts = val end,
 })
 
-SettingsTab:CreateToggle({
-   Name = "Auto Open Folder",
-   CurrentValue = true,
-   Callback = function(val) config.autoOpenFolder = val end,
-})
-
-SettingsTab:CreateSection("📦 What to Save")
-
-SettingsTab:CreateToggle({
-   Name = "Workspace",
-   CurrentValue = true,
-   Callback = function(val) config.saveWorkspace = val end,
-})
-
-SettingsTab:CreateToggle({
-   Name = "ReplicatedStorage",
-   CurrentValue = true,
-   Callback = function(val) config.saveReplicatedStorage = val end,
-})
-
-SettingsTab:CreateToggle({
-   Name = "ServerScriptService",
-   CurrentValue = false,
-   Callback = function(val) config.saveServerScriptService = val end,
-})
-
-SettingsTab:CreateToggle({
-   Name = "ServerStorage",
-   CurrentValue = false,
-   Callback = function(val) config.saveServerStorage = val end,
-})
-
-SettingsTab:CreateToggle({
-   Name = "Lighting",
-   CurrentValue = false,
-   Callback = function(val) config.saveLighting = val end,
-})
-
 -- STATS
-local stats = {
-    totalObjects = 0,
-    totalScripts = 0,
-    scriptsDecompiled = 0,
-    scriptsFailed = 0,
-    localScripts = 0,
-    serverScripts = 0,
-    moduleScripts = 0
-}
-
+local stats = {objects=0, scripts=0, decompiled=0}
 local refCounter = 0
 local refMap = {}
 
@@ -112,50 +88,36 @@ local function escapeXML(str)
     return str:gsub("&","&amp;"):gsub("<","&lt;"):gsub(">","&gt;"):gsub('"',"&quot;")
 end
 
--- DECOMPILER
 local function DecompileScript(script)
-    if not config.decompileScripts then
-        return "-- Decompiling disabled in settings"
-    end
+    if not config.decompileScripts then return "-- Decompiling disabled" end
     
-    stats.totalScripts = stats.totalScripts + 1
+    stats.scripts = stats.scripts + 1
     
-    -- Track script types
-    if script:IsA("LocalScript") then stats.localScripts = stats.localScripts + 1
-    elseif script:IsA("Script") then stats.serverScripts = stats.serverScripts + 1
-    elseif script:IsA("ModuleScript") then stats.moduleScripts = stats.moduleScripts + 1
-    end
-    
-    -- Method 1: Direct source
     local ok, src = pcall(function() return script.Source end)
     if ok and src and src ~= "" then
-        stats.scriptsDecompiled = stats.scriptsDecompiled + 1
-        return "-- " .. script.ClassName .. ": " .. script.Name .. "\n" .. src
+        stats.decompiled = stats.decompiled + 1
+        return src
     end
     
-    -- Method 2: Decompile
     if decompile then
         ok, src = pcall(decompile, script)
-        if ok and src and src ~= "" then
-            stats.scriptsDecompiled = stats.scriptsDecompiled + 1
-            return "-- " .. script.ClassName .. ": " .. script.Name .. " (Decompiled)\n" .. src
+        if ok and src then
+            stats.decompiled = stats.decompiled + 1
+            return src
         end
     end
     
-    -- Method 3: Syn decompile
     if syn and syn.decompile then
         ok, src = pcall(syn.decompile, script)
-        if ok and src and src ~= "" then
-            stats.scriptsDecompiled = stats.scriptsDecompiled + 1
-            return "-- " .. script.ClassName .. ": " .. script.Name .. " (Decompiled)\n" .. src
+        if ok and src then
+            stats.decompiled = stats.decompiled + 1
+            return src
         end
     end
     
-    stats.scriptsFailed = stats.scriptsFailed + 1
-    return "-- " .. script.ClassName .. ": " .. script.Name .. "\n-- Failed to decompile (Protected)"
+    return "-- Failed to decompile: " .. script.Name
 end
 
--- PROPERTY SERIALIZER
 local function SerializeProp(name, val)
     local t = typeof(val)
     
@@ -165,8 +127,6 @@ local function SerializeProp(name, val)
             name,x,y,z,r00,r01,r02,r10,r11,r12,r20,r21,r22)
     elseif t == "Vector3" then
         return string.format('<Vector3 name="%s"><X>%f</X><Y>%f</Y><Z>%f</Z></Vector3>',name,val.X,val.Y,val.Z)
-    elseif t == "Vector2" then
-        return string.format('<Vector2 name="%s"><X>%f</X><Y>%f</Y></Vector2>',name,val.X,val.Y)
     elseif t == "Color3" then
         return string.format('<Color3 name="%s"><R>%f</R><G>%f</G><B>%f</B></Color3>',name,val.R,val.G,val.B)
     elseif t == "BrickColor" then
@@ -174,8 +134,6 @@ local function SerializeProp(name, val)
     elseif t == "UDim2" then
         return string.format('<UDim2 name="%s"><XS>%f</XS><XO>%d</XO><YS>%f</YS><YO>%d</YO></UDim2>',
             name,val.X.Scale,val.X.Offset,val.Y.Scale,val.Y.Offset)
-    elseif t == "UDim" then
-        return string.format('<UDim name="%s"><S>%f</S><O>%d</O></UDim>',name,val.Scale,val.Offset)
     elseif t == "EnumItem" then
         return string.format('<token name="%s">%d</token>',name,val.Value)
     elseif t == "boolean" then
@@ -190,85 +148,39 @@ local function SerializeProp(name, val)
         return string.format('<string name="%s">%s</string>',name,escapeXML(val))
     elseif t == "Instance" then
         return string.format('<Ref name="%s">%s</Ref>',name,GetRef(val))
-    elseif t == "NumberSequence" then
-        local kps = val.Keypoints
-        local xml = string.format('<NumberSequence name="%s">',name)
-        for _, kp in ipairs(kps) do
-            xml = xml .. string.format('<NSK t="%f" v="%f" e="0"/>',kp.Time,kp.Value)
-        end
-        return xml .. '</NumberSequence>'
-    elseif t == "ColorSequence" then
-        local kps = val.Keypoints
-        local xml = string.format('<ColorSequence name="%s">',name)
-        for _, kp in ipairs(kps) do
-            xml = xml .. string.format('<CSK t="%f"><C r="%f" g="%f" b="%f"/></CSK>',
-                kp.Time,kp.Value.R,kp.Value.G,kp.Value.B)
-        end
-        return xml .. '</ColorSequence>'
     end
     return ""
 end
 
--- ALL IMPORTANT PROPERTIES
-local allProps = {
-    "Name","Archivable","CFrame","Size","Position","Orientation","Rotation",
-    "Color","BrickColor","Material","Transparency","Reflectance","CanCollide",
-    "Anchored","Massless","Locked","CollisionGroupId","CustomPhysicalProperties",
-    "Shape","TopSurface","BottomSurface","LeftSurface","RightSurface","FrontSurface","BackSurface",
-    "FormFactor","MeshId","TextureID","MeshType","Scale","Offset","VertexColor",
-    "Visible","BackgroundColor3","BackgroundTransparency","BorderSizePixel","BorderColor3",
-    "Text","TextColor3","TextSize","Font","TextWrapped","TextXAlignment","TextYAlignment",
-    "TextStrokeTransparency","TextStrokeColor3","TextScaled","TextTransparency",
-    "Image","ImageColor3","ImageTransparency","ScaleType","ImageRectOffset","ImageRectSize",
-    "CanvasSize","ScrollBarThickness","ScrollingDirection","Texture","Face",
-    "SoundId","Volume","Looped","PlaybackSpeed","TimePosition","Playing",
-    "Value","Brightness","Range","Angle","Shadows","Color","Enabled",
-    "Health","MaxHealth","WalkSpeed","JumpPower","JumpHeight","HipHeight",
-    "C0","C1","Part0","Part1","D","MaxForce","MaxTorque","P","PrimaryPart",
-    "AnimationId","UsePartColor","CastShadow","DoubleSided","LightInfluence",
-    "Rate","Lifetime","Speed","Acceleration","Drag","VelocityInheritance",
-    "ZIndex","LayoutOrder","AutoButtonColor","Modal","RenderFidelity",
-    "AlwaysOnTop","MaxDistance","StudsOffset","DisplayOrder","ResetOnSpawn",
-    "IgnoreGuiInset","ClipsDescendants","SizeConstraint","Active","AnchorPoint",
-    "AutomaticSize","BackgroundColor3","BorderMode","Position","Size"
+local props = {
+    "Name","CFrame","Size","Position","Orientation","Color","BrickColor",
+    "Material","Transparency","Reflectance","CanCollide","Anchored","Massless",
+    "Shape","TopSurface","BottomSurface","MeshId","TextureID","MeshType",
+    "Scale","Offset","Visible","BackgroundColor3","BackgroundTransparency",
+    "BorderSizePixel","Text","TextColor3","TextSize","Font","TextWrapped",
+    "Image","ImageColor3","ImageTransparency","SoundId","Volume","Looped",
+    "Value","Brightness","Range","C0","C1","Part0","Part1","Enabled"
 }
 
-local skipProps = {"Parent","DataModel","RobloxLocked","UniqueId","ScriptGuid","DataCost"}
-
-local function shouldSkip(name)
-    for _,v in ipairs(skipProps) do if name==v then return true end end
-    return false
-end
-
--- RECURSIVE XML GENERATOR
 local function GetXML(obj, depth)
     depth = depth or 0
-    if depth > 250 then return "" end
+    if depth > 200 then return "" end
+    if obj:IsA("Terrain") or obj:IsA("Camera") or obj.ClassName=="Player" then return "" end
     
-    if obj:IsA("Terrain") or obj:IsA("Camera") or obj.ClassName=="Player" then 
-        return "" 
-    end
-    
-    stats.totalObjects = stats.totalObjects + 1
+    stats.objects = stats.objects + 1
     
     local xml = {}
     table.insert(xml, string.format('<Item class="%s" referent="%s">',obj.ClassName,GetRef(obj)))
     table.insert(xml, "<Properties>")
     
-    -- Serialize all properties
-    for _, pn in ipairs(allProps) do
-        if not shouldSkip(pn) then
-            local ok, pv = pcall(function() return obj[pn] end)
-            if ok and pv ~= nil then
-                local px = SerializeProp(pn, pv)
-                if px ~= "" then
-                    table.insert(xml, px)
-                end
-            end
+    for _, pn in ipairs(props) do
+        local ok, pv = pcall(function() return obj[pn] end)
+        if ok and pv ~= nil then
+            local px = SerializeProp(pn, pv)
+            if px ~= "" then table.insert(xml, px) end
         end
     end
     
-    -- Scripts
     if obj:IsA("LuaSourceContainer") then
         local src = DecompileScript(obj)
         if src then
@@ -279,7 +191,6 @@ local function GetXML(obj, depth)
     
     table.insert(xml, "</Properties>")
     
-    -- Children
     local ok, children = pcall(function() return obj:GetChildren() end)
     if ok and children then
         for _, child in ipairs(children) do
@@ -291,291 +202,322 @@ local function GetXML(obj, depth)
     return table.concat(xml, "\n")
 end
 
--- MAIN SAVE FUNCTION
+-- ENSURE FOLDER EXISTS
+local function EnsureFolderExists(folderName)
+    if not hasMakeFolder or not hasIsFolder then
+        print("[ERROR] makefolder/isfolder not supported")
+        return false
+    end
+    
+    print("[FOLDER] Checking folder:", folderName)
+    
+    -- Check if folder exists
+    local exists = pcall(function() return isfolder(folderName) end) and isfolder(folderName)
+    
+    if exists then
+        print("[FOLDER] ✅ Folder exists:", folderName)
+        return true
+    end
+    
+    -- Create folder
+    print("[FOLDER] Creating folder:", folderName)
+    local success, err = pcall(function()
+        makefolder(folderName)
+    end)
+    
+    if success then
+        print("[FOLDER] ✅ Folder created:", folderName)
+        -- Verify it was created
+        task.wait(0.1)
+        local verified = pcall(function() return isfolder(folderName) end) and isfolder(folderName)
+        if verified then
+            print("[FOLDER] ✅ Folder verified:", folderName)
+            return true
+        else
+            print("[FOLDER] ⚠️ Folder not verified")
+            return false
+        end
+    else
+        print("[FOLDER] ❌ Failed to create folder:", err)
+        return false
+    end
+end
+
+-- TEST WRITE
+local function TestWrite(folderName)
+    print("[TEST] Testing write to folder:", folderName)
+    
+    local testFile = folderName .. "/test.txt"
+    local testContent = "Test file created at " .. os.date()
+    
+    local success, err = pcall(function()
+        writefile(testFile, testContent)
+    end)
+    
+    if success then
+        print("[TEST] ✅ Test file written:", testFile)
+        
+        -- Try to read it back
+        if hasReadFile then
+            local readSuccess, content = pcall(function()
+                return readfile(testFile)
+            end)
+            
+            if readSuccess and content == testContent then
+                print("[TEST] ✅ Test file verified!")
+                return true
+            else
+                print("[TEST] ⚠️ Test file read failed")
+            end
+        end
+        
+        return true
+    else
+        print("[TEST] ❌ Test write failed:", err)
+        return false
+    end
+end
+
+-- MAIN SAVE
 local function SaveMap()
-    if not hasWrite then
+    if not hasWriteFile or not hasMakeFolder or not hasIsFolder then
         Rayfield:Notify({
-            Title = "❌ Error", 
-            Content = "Executor tidak support file writing!",
+            Title = "❌ Error",
+            Content = "Executor tidak support file operations!",
             Duration = 5
         })
         return
     end
     
-    Rayfield:Notify({
-        Title = "⏳ Saving Map", 
-        Content = "Processing all services...",
-        Duration = 2
-    })
+    print("\n" .. string.rep("=", 60))
+    print("🚀 STARTING MAP SAVE")
+    print(string.rep("=", 60))
+    
+    -- Ensure folder exists
+    local folderName = config.folderName
+    print("[INFO] Target folder:", folderName)
+    
+    if not EnsureFolderExists(folderName) then
+        Rayfield:Notify({
+            Title = "❌ Folder Error",
+            Content = "Tidak bisa buat folder!\nCek console (F9)",
+            Duration = 5
+        })
+        print("[ERROR] Failed to create folder. Aborting.")
+        return
+    end
+    
+    -- Test write
+    if not TestWrite(folderName) then
+        Rayfield:Notify({
+            Title = "⚠️ Write Test Failed",
+            Content = "Test write gagal!\nTapi tetap lanjut...",
+            Duration = 3
+        })
+    end
+    
+    Rayfield:Notify({Title = "⏳ Saving", Content = "Processing map...", Duration = 2})
     
     local startTime = tick()
     refCounter = 0
     refMap = {}
-    stats = {totalObjects=0,totalScripts=0,scriptsDecompiled=0,scriptsFailed=0,localScripts=0,serverScripts=0,moduleScripts=0}
+    stats = {objects=0, scripts=0, decompiled=0}
     
     local header = '<?xml version="1.0" encoding="UTF-8"?>\n<roblox xmlns:xmime="http://www.w3.org/2005/05/xmlmime" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://www.roblox.com/roblox.xsd" version="4">\n<External>null</External>\n<External>nil</External>\n'
     
     local body = ""
-    local servicesProcessed = {}
     
-    -- Process services based on config
-    if config.saveWorkspace then
-        Rayfield:Notify({Title = "📦 Processing", Content = "Workspace...", Duration = 1})
-        for _, child in ipairs(game.Workspace:GetChildren()) do
-            body = body .. GetXML(child)
-        end
-        table.insert(servicesProcessed, "Workspace")
+    print("[EXPORT] Processing Workspace...")
+    for _, child in ipairs(game.Workspace:GetChildren()) do
+        body = body .. GetXML(child)
     end
     
-    if config.saveReplicatedStorage then
-        Rayfield:Notify({Title = "📦 Processing", Content = "ReplicatedStorage...", Duration = 1})
-        for _, child in ipairs(game.ReplicatedStorage:GetChildren()) do
-            body = body .. GetXML(child)
-        end
-        table.insert(servicesProcessed, "ReplicatedStorage")
-    end
-    
-    if config.saveServerScriptService then
-        Rayfield:Notify({Title = "📦 Processing", Content = "ServerScriptService...", Duration = 1})
-        for _, child in ipairs(game.ServerScriptService:GetChildren()) do
-            body = body .. GetXML(child)
-        end
-        table.insert(servicesProcessed, "ServerScriptService")
-    end
-    
-    if config.saveServerStorage then
-        Rayfield:Notify({Title = "📦 Processing", Content = "ServerStorage...", Duration = 1})
-        for _, child in ipairs(game.ServerStorage:GetChildren()) do
-            body = body .. GetXML(child)
-        end
-        table.insert(servicesProcessed, "ServerStorage")
-    end
-    
-    if config.saveLighting then
-        Rayfield:Notify({Title = "📦 Processing", Content = "Lighting...", Duration = 1})
-        for _, child in ipairs(game.Lighting:GetChildren()) do
-            body = body .. GetXML(child)
-        end
-        table.insert(servicesProcessed, "Lighting")
-    end
-    
-    if stats.totalObjects == 0 then
-        Rayfield:Notify({
-            Title = "⚠️ Nothing to Save", 
-            Content = "Enable at least one service in Settings!",
-            Duration = 5
-        })
-        return
+    print("[EXPORT] Processing ReplicatedStorage...")
+    for _, child in ipairs(game.ReplicatedStorage:GetChildren()) do
+        body = body .. GetXML(child)
     end
     
     local data = header .. body .. "\n</roblox>"
-    local gameName = game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId).Name or "Unknown"
-    gameName = gameName:gsub("[^%w%s%-]", ""):gsub("%s+", "_") -- Clean name
+    
+    local gameName = "RobloxMap"
+    local placeIdSuccess, placeId = pcall(function() return game.PlaceId end)
+    if placeIdSuccess and placeId and placeId > 0 then
+        local nameSuccess, info = pcall(function()
+            return game:GetService("MarketplaceService"):GetProductInfo(placeId)
+        end)
+        if nameSuccess and info and info.Name then
+            gameName = info.Name:gsub("[^%w%s%-]", ""):gsub("%s+", "_")
+        end
+    end
     
     local fileName = gameName .. "_" .. os.date("%Y%m%d_%H%M%S")
     local ext = config.fileFormat == "RBXL" and ".rbxl" or ".rbxmx"
     local fullFileName = fileName .. ext
+    local filePath = folderName .. "/" .. fullFileName
     
-    -- Create folder
-    local folder = "SavedMaps"
-    if not isfolder(folder) then makefolder(folder) end
+    print("[SAVE] File name:", fullFileName)
+    print("[SAVE] Full path:", filePath)
+    print("[SAVE] File size:", string.format("%.2f KB", #data/1024))
     
-    -- Save file
-    local filePath = folder .. "/" .. fullFileName
-    writefile(filePath, data)
+    -- WRITE FILE
+    local writeSuccess, writeErr = pcall(function()
+        writefile(filePath, data)
+    end)
+    
+    if not writeSuccess then
+        print("[ERROR] Write failed:", writeErr)
+        Rayfield:Notify({
+            Title = "❌ Save Failed",
+            Content = "Error: " .. tostring(writeErr) .. "\nCek console (F9)",
+            Duration = 8
+        })
+        return
+    end
+    
+    print("[SAVE] ✅ File written successfully!")
+    
+    -- VERIFY FILE
+    task.wait(0.2)
+    if hasReadFile then
+        local verifySuccess, verifyContent = pcall(function()
+            return readfile(filePath)
+        end)
+        
+        if verifySuccess and #verifyContent == #data then
+            print("[VERIFY] ✅ File verified! Size matches.")
+        else
+            print("[VERIFY] ⚠️ File verification failed")
+        end
+    end
     
     local timeTaken = math.floor((tick() - startTime) * 100) / 100
     
-    -- DETAILED CONSOLE OUTPUT
-    print("\n" .. string.rep("=", 70))
-    print("💾 MAP SAVED SUCCESSFULLY!")
-    print(string.rep("=", 70))
-    print("📁 File Name:", fullFileName)
-    print("📂 Location: workspace/" .. folder .. "/")
-    print("💾 File Size:", string.format("%.2f KB (%.2f MB)", #data/1024, #data/1024/1024))
-    print("⏱️  Time Taken:", timeTaken, "seconds")
-    print("")
-    print("📦 STATISTICS:")
-    print("  Total Objects:", stats.totalObjects)
-    print("  Total Scripts:", stats.totalScripts)
-    print("    🔵 LocalScripts:", stats.localScripts)
-    print("    🟢 ServerScripts:", stats.serverScripts)
-    print("    🟡 ModuleScripts:", stats.moduleScripts)
-    print("")
-    print("📜 DECOMPILE RESULTS:")
-    print("  ✅ Successfully Decompiled:", stats.scriptsDecompiled)
-    print("  ❌ Failed:", stats.scriptsFailed)
-    if stats.totalScripts > 0 then
-        local rate = math.floor((stats.scriptsDecompiled / stats.totalScripts) * 100)
-        print("  📈 Success Rate:", rate .. "%")
-    end
-    print("")
-    print("📦 SERVICES SAVED:")
-    for i, service in ipairs(servicesProcessed) do
-        print("  " .. i .. ". " .. service)
-    end
-    print("")
-    print("💡 HOW TO OPEN:")
-    print("  1. Open Roblox Studio")
-    if config.fileFormat == "RBXL" then
-        print("  2. File → Open from File")
-        print("  3. Select:", filePath)
-    else
-        print("  2. Insert → Insert from File")
-        print("  3. Select:", filePath)
-    end
-    print(string.rep("=", 70) .. "\n")
+    print(string.rep("=", 60))
+    print("✅ MAP SAVED!")
+    print(string.rep("=", 60))
+    print("📁 File:", fullFileName)
+    print("📂 Folder:", folderName)
+    print("💾 Size:", string.format("%.2f KB (%.2f MB)", #data/1024, #data/1024/1024))
+    print("📦 Objects:", stats.objects)
+    print("📜 Scripts:", stats.decompiled .. "/" .. stats.scripts)
+    print("⏱️ Time:", timeTaken .. "s")
+    print(string.rep("=", 60) .. "\n")
     
-    -- Copy path to clipboard
-    if setclipboard then
-        setclipboard(filePath)
-        print("✅ File path copied to clipboard!")
-    end
-    
-    -- Success notification
-    local notifMsg = string.format("💾 %s\n\n📊 %d objects | %d scripts\n⏱️ %ds\n\n📂 Saved to:\nworkspace/%s/",
-        fullFileName, stats.totalObjects, stats.scriptsDecompiled, timeTaken, folder)
-    
-    if setclipboard then
-        notifMsg = notifMsg .. "\n\n✅ Path copied!"
-    end
+    local msg = string.format("✅ Saved!\n\n📁 %s\n💾 %.1f KB\n📦 %d objects\n📜 %d scripts\n\n📂 Folder: %s",
+        fullFileName, #data/1024, stats.objects, stats.decompiled, folderName)
     
     Rayfield:Notify({
-        Title = "✅ Map Saved!", 
-        Content = notifMsg,
-        Duration = 12
+        Title = "✅ Success!",
+        Content = msg,
+        Duration = 10
     })
     
-    -- Auto open folder (if supported)
-    if config.autoOpenFolder then
-        task.wait(1)
-        Rayfield:Notify({
-            Title = "📂 Opening Folder", 
-            Content = "Check workspace/" .. folder .. "/",
-            Duration = 5
-        })
+    if setclipboard then
+        setclipboard(filePath)
+        print("✅ Path copied to clipboard:", filePath)
     end
 end
 
--- QUICK SAVE PRESETS
-MainTab:CreateSection("🚀 Quick Save")
-
+-- BUTTONS
 MainTab:CreateButton({
-    Name = "💾 Save Full Map",
+    Name = "💾 SAVE MAP",
     Callback = SaveMap
 })
 
 MainTab:CreateButton({
-    Name = "📦 Save Workspace Only",
+    Name = "📂 Show Folder Path",
     Callback = function()
-        config.saveWorkspace = true
-        config.saveReplicatedStorage = false
-        config.saveServerScriptService = false
-        config.saveServerStorage = false
-        config.saveLighting = false
-        SaveMap()
-    end
-})
-
-MainTab:CreateButton({
-    Name = "🎮 Save Workspace + Scripts",
-    Callback = function()
-        config.saveWorkspace = true
-        config.saveReplicatedStorage = true
-        config.saveServerScriptService = true
-        config.saveServerStorage = false
-        config.saveLighting = false
-        SaveMap()
-    end
-})
-
--- FOLDER MANAGEMENT
-MainTab:CreateSection("📂 Folder Management")
-
-MainTab:CreateButton({
-    Name = "📂 Open Saved Maps Folder",
-    Callback = function()
-        local folder = "SavedMaps"
-        if isfolder and isfolder(folder) then
-            Rayfield:Notify({
-                Title = "📂 Folder Location", 
-                Content = "Path: workspace/" .. folder .. "/\n\nGo to your executor's workspace folder!",
-                Duration = 8
-            })
-            print("\n📂 FOLDER LOCATION:")
-            print("Path: workspace/" .. folder .. "/")
-            print("\nFull path examples:")
-            print("• Solara: C:\\Users\\[Name]\\AppData\\Local\\Solara\\workspace\\" .. folder)
-            print("• Wave: C:\\Users\\[Name]\\AppData\\Local\\Wave\\workspace\\" .. folder)
-            print("• Delta: C:\\Users\\[Name]\\AppData\\Local\\Delta\\workspace\\" .. folder)
-        else
-            Rayfield:Notify({
-                Title = "⚠️ Folder Empty", 
-                Content = "Save a map first!",
-                Duration = 3
-            })
-        end
-    end
-})
-
-MainTab:CreateButton({
-    Name = "📋 List Saved Maps",
-    Callback = function()
-        local folder = "SavedMaps"
-        if isfolder and isfolder(folder) and listfiles then
-            local files = listfiles(folder)
+        local folder = config.folderName
+        local msg = "📂 Folder: " .. folder .. "\n\n"
+        
+        if hasIsFolder and isfolder(folder) then
+            msg = msg .. "✅ Folder exists!\n\n"
             
-            print("\n" .. string.rep("=", 60))
-            print("📋 SAVED MAPS (" .. #files .. " files)")
-            print(string.rep("=", 60))
-            
-            if #files > 0 then
+            if hasListFiles then
+                local files = listfiles(folder)
+                msg = msg .. "📋 Files: " .. #files
+                
+                print("\n=== FILES IN " .. folder .. " ===")
                 for i, file in ipairs(files) do
                     local name = file:match("([^/\\]+)$")
-                    local content = readfile(file)
-                    local size = #content / 1024
-                    print(string.format("%d. %s (%.2f KB)", i, name, size))
+                    print(i .. ". " .. name)
                 end
-            else
-                print("No files found. Save a map first!")
+                print("========================\n")
             end
-            
-            print(string.rep("=", 60) .. "\n")
-            
+        else
+            msg = msg .. "❌ Folder doesn't exist yet.\nSave a map first!"
+        end
+        
+        msg = msg .. "\n\n💡 Full path:\nworkspace/" .. folder .. "/"
+        
+        Rayfield:Notify({
+            Title = "📂 Folder Info",
+            Content = msg,
+            Duration = 8
+        })
+        
+        print("\n📂 FOLDER LOCATION:")
+        print("Folder name:", folder)
+        print("Relative path: workspace/" .. folder)
+        print("\nCommon executor paths:")
+        print("• Solara: C:\\Users\\[Name]\\AppData\\Local\\Solara\\workspace\\" .. folder)
+        print("• Wave: C:\\Users\\[Name]\\AppData\\Local\\Wave\\workspace\\" .. folder)
+        print("• Delta: C:\\Users\\[Name]\\AppData\\Local\\Delta\\workspace\\" .. folder)
+        print("")
+    end
+})
+
+MainTab:CreateButton({
+    Name = "🧪 Test File System",
+    Callback = function()
+        print("\n=== FILE SYSTEM TEST ===")
+        
+        local folder = config.folderName
+        
+        print("1. Creating folder:", folder)
+        local folderOk = EnsureFolderExists(folder)
+        print("   Result:", folderOk and "✅ Success" or "❌ Failed")
+        
+        if folderOk then
+            print("\n2. Testing write...")
+            local writeOk = TestWrite(folder)
+            print("   Result:", writeOk and "✅ Success" or "❌ Failed")
+        end
+        
+        print("========================\n")
+        
+        if folderOk then
             Rayfield:Notify({
-                Title = "📋 Files Listed", 
-                Content = "Found " .. #files .. " saved map(s)\nCheck console (F9)",
+                Title = "✅ Test Passed",
+                Content = "File system berfungsi!\nSiap save map.",
+                Duration = 4
+            })
+        else
+            Rayfield:Notify({
+                Title = "❌ Test Failed",
+                Content = "File system tidak support!\nGanti executor.",
                 Duration = 5
             })
         end
     end
 })
 
--- INFO TAB
-InfoTab:CreateParagraph({
-    Title = "💡 How to Use", 
-    Content = "1. Configure settings (optional)\n2. Click 'Save Full Map'\n3. Wait for process to complete\n4. File saved to workspace/SavedMaps/\n5. Open in Roblox Studio:\n   • RBXL: File → Open from File\n   • RBXMX: Insert → Insert from File"
+MainTab:CreateParagraph({
+    Title = "💡 Instructions",
+    Content = "1. Klik 'Test File System' dulu\n2. Kalau test pass, klik 'SAVE MAP'\n3. File tersimpan di workspace/" .. config.folderName .. "/\n4. Buka Roblox Studio\n5. Insert → Insert from File\n6. Pilih file dari folder"
 })
 
-InfoTab:CreateParagraph({
-    Title = "📁 File Formats", 
-    Content = "RBXMX (Recommended):\n• XML text format\n• Easy to edit\n• Works everywhere\n• Larger file size\n\nRBXL (Studio Format):\n• Binary format\n• Smaller file size\n• Direct open in Studio\n• Cannot edit manually"
-})
+local statusText = "🔍 System Check:\n\n"
+statusText = statusText .. (hasWriteFile and "✅" or "❌") .. " writefile\n"
+statusText = statusText .. (hasMakeFolder and "✅" or "❌") .. " makefolder\n"
+statusText = statusText .. (hasIsFolder and "✅" or "❌") .. " isfolder\n"
+statusText = statusText .. (hasListFiles and "✅" or "❌") .. " listfiles\n"
+statusText = statusText .. (hasReadFile and "✅" or "❌") .. " readfile"
 
-InfoTab:CreateParagraph({
-    Title = "📂 File Location", 
-    Content = "Files are saved to:\nworkspace/SavedMaps/\n\nFull path:\nC:\\Users\\[YourName]\\AppData\\Local\\[Executor]\\workspace\\SavedMaps\\"
-})
-
-local statusText = "🔍 System Status:\n\n"
-statusText = statusText .. (hasWrite and "✅ File Writing: Supported\n" or "❌ File Writing: NOT Supported\n")
-statusText = statusText .. (decompile and "✅ Decompiler: Available\n" or "⚠️ Decompiler: Limited\n")
-statusText = statusText .. (setclipboard and "✅ Clipboard: Supported" or "⚠️ Clipboard: Not Supported")
-
-InfoTab:CreateParagraph({Title = "System Info", Content = statusText})
+SettingsTab:CreateParagraph({Title = "Status", Content = statusText})
 
 Rayfield:Notify({
-    Title = "✅ Ready to Save!", 
-    Content = "Maps will be saved to workspace/SavedMaps/",
-    Duration = 4
+    Title = "✅ Loaded",
+    Content = "Test file system dulu!",
+    Duration = 3
 })
