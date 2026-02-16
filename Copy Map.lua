@@ -1,41 +1,73 @@
--- NYEMEK HUB - XENO COMPATIBLE SAVER
--- Auto-open folder after save
+-- NYEMEK HUB - UPLOAD TO FILE HOSTING
+-- Get direct download link (MediaFire style)
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local Window = Rayfield:CreateWindow({
-   Name = "Nyemek Hub | Xeno Saver",
-   LoadingTitle = "Loading Xeno Saver...",
-   LoadingSubtitle = "With Auto-Open Folder",
+   Name = "Nyemek Hub | Web Upload",
+   LoadingTitle = "Loading Web Uploader...",
+   LoadingSubtitle = "Upload & Get Download Link",
    ConfigurationSaving = { Enabled = false }
 })
 
 local MainTab = Window:CreateTab("💾 Save", 4483362458)
 local ProgressTab = Window:CreateTab("📊 Progress", 4483362458)
+local SettingsTab = Window:CreateTab("⚙️ Settings", 4483362458)
 
+local webhookUrl = ""
+
+SettingsTab:CreateInput({
+   Name = "Discord Webhook (Optional)",
+   PlaceholderText = "Untuk notifikasi link download...",
+   Callback = function(text) webhookUrl = text:match("^%s*(.-)%s*$") end,
+})
+
+-- DETECT HTTP
+local httpRequest = nil
+if syn and syn.request then httpRequest = syn.request
+elseif request then httpRequest = request
+elseif http and http.request then httpRequest = http.request
+elseif http_request then httpRequest = http_request
+end
+
+local HttpService = game:GetService("HttpService")
+
+-- PROGRESS
 local progressData = {
     currentService = "Idle",
     totalObjects = 0,
     processedObjects = 0,
     percentage = 0,
-    status = "Ready",
-    startTime = 0,
-    savedFileName = ""
+    status = "Ready"
 }
 
+-- CONFIG
 local config = {
     fileFormat = "RBXL",
-    decompileScripts = true
+    decompileScripts = true,
+    uploadMethod = "tmpfiles" -- tmpfiles, fileio, or catbox
 }
 
-MainTab:CreateDropdown({
+SettingsTab:CreateDropdown({
    Name = "File Format",
    Options = {"RBXL", "RBXMX"},
    CurrentOption = "RBXL",
    Callback = function(option) config.fileFormat = option end,
 })
 
-MainTab:CreateToggle({
+SettingsTab:CreateDropdown({
+   Name = "Upload Service",
+   Options = {"tmpfiles.org (24h)", "file.io (1 download)", "catbox.moe (1 year)"},
+   CurrentOption = "tmpfiles.org (24h)",
+   Callback = function(option)
+       if option:match("tmpfiles") then config.uploadMethod = "tmpfiles"
+       elseif option:match("file.io") then config.uploadMethod = "fileio"
+       elseif option:match("catbox") then config.uploadMethod = "catbox"
+       end
+   end,
+})
+
+SettingsTab:CreateToggle({
    Name = "Decompile Scripts",
    CurrentValue = true,
    Callback = function(val) config.decompileScripts = val end,
@@ -76,15 +108,7 @@ local function DecompileScript(script)
         end
     end
     
-    if syn and syn.decompile then
-        ok, src = pcall(syn.decompile, script)
-        if ok and src then
-            stats.decompiled = stats.decompiled + 1
-            return src
-        end
-    end
-    
-    return "-- Protected: " .. script.Name
+    return "-- Protected"
 end
 
 local function SerializeProp(name, val)
@@ -180,31 +204,167 @@ local function CountObjects()
         game.Lighting, game.SoundService
     }) do
         pcall(function()
-            for _ in ipairs(service:GetDescendants()) do
-                total = total + 1
-            end
+            for _ in ipairs(service:GetDescendants()) do total = total + 1 end
         end)
     end
     return total
 end
 
-local function SaveMap()
-    if not writefile then
-        Rayfield:Notify({Title = "❌ Error", Content = "writefile not supported!", Duration = 5})
+-- UPLOAD TO TMPFILES.ORG
+local function UploadToTmpFiles(fileName, fileData)
+    print("[UPLOAD] Uploading to tmpfiles.org...")
+    
+    local boundary = "----WebKitFormBoundary" .. tostring(math.random(100000000, 999999999))
+    
+    local payload = "--" .. boundary .. "\r\n"
+    payload = payload .. 'Content-Disposition: form-data; name="file"; filename="' .. fileName .. '"\r\n'
+    payload = payload .. "Content-Type: application/octet-stream\r\n\r\n"
+    payload = payload .. fileData .. "\r\n"
+    payload = payload .. "--" .. boundary .. "--\r\n"
+    
+    local ok, response = pcall(function()
+        return httpRequest({
+            Url = "https://tmpfiles.org/api/v1/upload",
+            Method = "POST",
+            Headers = {
+                ["Content-Type"] = "multipart/form-data; boundary=" .. boundary
+            },
+            Body = payload
+        })
+    end)
+    
+    if ok and response and response.Body then
+        local data = HttpService:JSONDecode(response.Body)
+        if data.status == "success" and data.data and data.data.url then
+            local url = data.data.url
+            -- Convert to direct download
+            local downloadUrl = url:gsub("tmpfiles.org/", "tmpfiles.org/dl/")
+            return downloadUrl, url
+        end
+    end
+    
+    return nil, nil
+end
+
+-- UPLOAD TO FILE.IO
+local function UploadToFileIO(fileName, fileData)
+    print("[UPLOAD] Uploading to file.io...")
+    
+    local boundary = "----Boundary" .. tostring(math.random(100000, 999999))
+    
+    local payload = "--" .. boundary .. "\r\n"
+    payload = payload .. 'Content-Disposition: form-data; name="file"; filename="' .. fileName .. '"\r\n'
+    payload = payload .. "Content-Type: application/octet-stream\r\n\r\n"
+    payload = payload .. fileData .. "\r\n"
+    payload = payload .. "--" .. boundary .. "--\r\n"
+    
+    local ok, response = pcall(function()
+        return httpRequest({
+            Url = "https://file.io",
+            Method = "POST",
+            Headers = {
+                ["Content-Type"] = "multipart/form-data; boundary=" .. boundary
+            },
+            Body = payload
+        })
+    end)
+    
+    if ok and response and response.Body then
+        local data = HttpService:JSONDecode(response.Body)
+        if data.success and data.link then
+            return data.link, data.link
+        end
+    end
+    
+    return nil, nil
+end
+
+-- UPLOAD TO CATBOX.MOE
+local function UploadToCatbox(fileName, fileData)
+    print("[UPLOAD] Uploading to catbox.moe...")
+    
+    local boundary = "----CatboxBoundary" .. tostring(math.random(100000, 999999))
+    
+    local payload = "--" .. boundary .. "\r\n"
+    payload = payload .. 'Content-Disposition: form-data; name="reqtype"\r\n\r\nfileupload\r\n'
+    payload = payload .. "--" .. boundary .. "\r\n"
+    payload = payload .. 'Content-Disposition: form-data; name="fileToUpload"; filename="' .. fileName .. '"\r\n'
+    payload = payload .. "Content-Type: application/octet-stream\r\n\r\n"
+    payload = payload .. fileData .. "\r\n"
+    payload = payload .. "--" .. boundary .. "--\r\n"
+    
+    local ok, response = pcall(function()
+        return httpRequest({
+            Url = "https://catbox.moe/user/api.php",
+            Method = "POST",
+            Headers = {
+                ["Content-Type"] = "multipart/form-data; boundary=" .. boundary
+            },
+            Body = payload
+        })
+    end)
+    
+    if ok and response and response.Body then
+        local url = response.Body:match("https://[%w%.%-_/]+")
+        if url then
+            return url, url
+        end
+    end
+    
+    return nil, nil
+end
+
+-- SEND TO DISCORD
+local function SendToDiscord(fileName, downloadUrl, viewUrl, fileSize)
+    if webhookUrl == "" then return end
+    
+    local embedData = {
+        username = "Nyemek Hub - Web Upload",
+        embeds = {{
+            title = "📤 Map Uploaded Successfully!",
+            description = "**Your map is ready to download!**\n\nClick the link below to download the file.",
+            color = 5763719,
+            fields = {
+                {name = "📁 File", value = "`" .. fileName .. "`", inline = false},
+                {name = "💾 Size", value = string.format("%.2f MB", fileSize/1024/1024), inline = true},
+                {name = "📦 Objects", value = tostring(stats.objects), inline = true},
+                {name = "📜 Scripts", value = stats.decompiled .. "/" .. stats.scripts, inline = true},
+                {name = "🔗 DOWNLOAD LINK", value = "[**>>> CLICK HERE TO DOWNLOAD <<<**](" .. downloadUrl .. ")", inline = false},
+                {name = "🌐 View Page", value = "[Click Here](" .. viewUrl .. ")", inline = false},
+                {name = "💡 How to Use", value = "1. Click download link\n2. Save the file\n3. Open Roblox Studio\n4. File → Open from File (RBXL)\n   OR Insert → Insert from File (RBXMX)\n5. Done!", inline = false}
+            },
+            footer = {text = "Nyemek Hub | Web Uploader"},
+            timestamp = os.date("!%Y-%m-%dT%H:%M:%S")
+        }}
+    }
+    
+    pcall(function()
+        httpRequest({
+            Url = webhookUrl,
+            Method = "POST",
+            Headers = {["Content-Type"] = "application/json"},
+            Body = HttpService:JSONEncode(embedData)
+        })
+    end)
+end
+
+-- MAIN SAVE & UPLOAD
+local function SaveAndUpload()
+    if not httpRequest then
+        Rayfield:Notify({Title = "❌ Error", Content = "HTTP tidak support!", Duration = 5})
         return
     end
     
     print("\n" .. string.rep("=", 70))
-    print("🚀 STARTING SAVE")
+    print("🚀 STARTING PROCESS")
     print(string.rep("=", 70))
     
-    progressData.startTime = tick()
     progressData.processedObjects = 0
     refCounter = 0
     refMap = {}
     stats = {objects=0, scripts=0, decompiled=0}
     
-    Rayfield:Notify({Title = "⏳ Counting", Content = "Please wait...", Duration = 2})
+    Rayfield:Notify({Title = "⏳ Counting", Content = "Counting objects...", Duration = 2})
     
     progressData.totalObjects = CountObjects()
     print("[INIT] Total objects:", progressData.totalObjects)
@@ -238,6 +398,8 @@ local function SaveMap()
     
     local data = header .. body .. "\n</roblox>"
     
+    print(string.format("[COMPLETE] XML generated: %.2f MB", #data/1024/1024))
+    
     local gameName = "RobloxMap"
     pcall(function()
         local info = game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId)
@@ -250,115 +412,99 @@ local function SaveMap()
     local ext = config.fileFormat == "RBXL" and ".rbxl" or ".rbxmx"
     local fullFileName = fileName .. ext
     
-    progressData.savedFileName = fullFileName
+    Rayfield:Notify({Title = "📤 Uploading", Content = "Uploading to web...", Duration = 3})
     
-    Rayfield:Notify({Title = "💾 Saving", Content = "Writing file...", Duration = 2})
+    local downloadUrl, viewUrl
     
-    local ok, err = pcall(function()
-        writefile(fullFileName, data)
-    end)
+    if config.uploadMethod == "tmpfiles" then
+        downloadUrl, viewUrl = UploadToTmpFiles(fullFileName, data)
+    elseif config.uploadMethod == "fileio" then
+        downloadUrl, viewUrl = UploadToFileIO(fullFileName, data)
+    elseif config.uploadMethod == "catbox" then
+        downloadUrl, viewUrl = UploadToCatbox(fullFileName, data)
+    end
     
-    local timeTaken = tick() - progressData.startTime
+    if not downloadUrl then
+        print("[WARN] Primary upload failed, trying alternatives...")
+        downloadUrl, viewUrl = UploadToTmpFiles(fullFileName, data)
+        if not downloadUrl then
+            downloadUrl, viewUrl = UploadToFileIO(fullFileName, data)
+        end
+        if not downloadUrl then
+            downloadUrl, viewUrl = UploadToCatbox(fullFileName, data)
+        end
+    end
     
-    if ok then
-        print(string.rep("=", 70))
-        print("✅ SAVE SUCCESS!")
+    print(string.rep("=", 70))
+    
+    if downloadUrl then
+        print("✅ UPLOAD SUCCESS!")
         print(string.rep("=", 70))
         print("📁 File:", fullFileName)
-        print("💾 Size:", string.format("%.2f KB (%.2f MB)", #data/1024, #data/1024/1024))
+        print("💾 Size:", string.format("%.2f MB", #data/1024/1024))
         print("📦 Objects:", stats.objects)
         print("📜 Scripts:", stats.decompiled .. "/" .. stats.scripts)
-        print("⏱️ Time:", string.format("%.2fs", timeTaken))
         print("")
-        print("📂 LOKASI FILE:")
-        print("File tersimpan di folder Xeno:")
-        print("C:\\Users\\[YourName]\\Downloads\\Xeno-v1.3.25b\\" .. fullFileName)
+        print("🔗 DOWNLOAD LINK:")
+        print(downloadUrl)
+        print("")
+        print("🌐 VIEW PAGE:")
+        print(viewUrl or downloadUrl)
         print(string.rep("=", 70) .. "\n")
         
-        Rayfield:Notify({
-            Title = "✅ SAVE SUCCESS!",
-            Content = string.format(
-                "%s\n\n💾 %.1f MB | %d obj | %d scripts\n⏱️ %.1fs\n\n🔽 Klik 'OPEN FOLDER' button!",
-                fullFileName, #data/1024/1024, stats.objects, stats.decompiled, timeTaken
-            ),
-            Duration = 15
-        })
-        
         if setclipboard then
-            setclipboard(fullFileName)
-            print("✅ Filename copied!")
+            setclipboard(downloadUrl)
+            print("✅ Download link copied to clipboard!")
         end
+        
+        SendToDiscord(fullFileName, downloadUrl, viewUrl or downloadUrl, #data)
+        
+        local msg = string.format(
+            "✅ UPLOAD SUCCESS!\n\n" ..
+            "📁 %s\n" ..
+            "💾 %.1f MB\n" ..
+            "📦 %d obj | %d scripts\n\n" ..
+            "🔗 Link copied to clipboard!\n" ..
+            "%s\n\n" ..
+            "Download dan import ke Studio!",
+            fullFileName, #data/1024/1024, stats.objects, stats.decompiled,
+            downloadUrl:sub(1, 50) .. "..."
+        )
+        
+        Rayfield:Notify({Title = "✅ Upload Success!", Content = msg, Duration = 20})
     else
-        print("❌ SAVE FAILED:", err)
-        Rayfield:Notify({Title = "❌ Failed", Content = tostring(err), Duration = 5})
+        print("❌ UPLOAD FAILED!")
+        print(string.rep("=", 70) .. "\n")
+        Rayfield:Notify({
+            Title = "❌ Upload Failed",
+            Content = "Semua upload method gagal!\nCek console (F9)",
+            Duration = 8
+        })
     end
 end
 
--- BUTTONS
 MainTab:CreateButton({
-    Name = "💾 SAVE MAP (ALL SERVICES)",
-    Callback = SaveMap
-})
-
-MainTab:CreateButton({
-    Name = "📂 OPEN XENO FOLDER",
-    Callback = function()
-        Rayfield:Notify({
-            Title = "📂 Opening Folder",
-            Content = "Opening Windows Explorer...",
-            Duration = 3
-        })
-        
-        -- Try to open folder
-        local opened = false
-        
-        -- Method 1: shell command
-        pcall(function()
-            local cmd = 'explorer "' .. os.getenv("USERPROFILE") .. '\\Downloads\\Xeno-v1.3.25b"'
-            os.execute(cmd)
-            opened = true
-        end)
-        
-        if opened then
-            print("✅ Folder opened!")
-            Rayfield:Notify({
-                Title = "✅ Folder Opened",
-                Content = "Check Windows Explorer!\n\nFile: " .. (progressData.savedFileName ~= "" and progressData.savedFileName or "Not saved yet"),
-                Duration = 8
-            })
-        else
-            Rayfield:Notify({
-                Title = "⚠️ Manual Navigation",
-                Content = "Go to:\nC:\\Users\\[YourName]\\Downloads\\Xeno-v1.3.25b\\\n\nFile: " .. (progressData.savedFileName ~= "" and progressData.savedFileName or "Not saved yet"),
-                Duration = 10
-            })
-            
-            print("\n📂 MANUAL NAVIGATION:")
-            print("1. Open File Explorer")
-            print("2. Go to: Downloads")
-            print("3. Open folder: Xeno-v1.3.25b")
-            print("4. Look for:", progressData.savedFileName ~= "" and progressData.savedFileName or "[YourFile].rbxl")
-        end
-    end
+    Name = "🌐 SAVE & UPLOAD TO WEB",
+    Callback = SaveAndUpload
 })
 
 MainTab:CreateParagraph({
-    Title = "📂 File Location (XENO)",
-    Content = "⚠️ PENTING!\n\nFile TIDAK disave ke Downloads folder!\n\nFile disave ke FOLDER XENO:\nC:\\Users\\[Name]\\Downloads\\Xeno-v1.3.25b\\\n\nSetelah save, klik button 'OPEN XENO FOLDER' untuk buka folder!"
+    Title = "🌐 How It Works",
+    Content = "1. Script generate map file\n2. Upload ke web hosting\n3. Dapat link download\n4. Link auto-copied\n5. Link dikirim ke Discord (optional)\n6. Download dari browser\n7. Import ke Studio"
 })
 
 MainTab:CreateParagraph({
-    Title = "💡 Cara Pakai",
-    Content = "1. Klik 'SAVE MAP'\n2. Tunggu proses selesai\n3. Klik 'OPEN XENO FOLDER'\n4. File .rbxl ada disana!\n5. Double-click file atau drag ke Studio"
+    Title = "💡 Upload Services",
+    Content = "📌 tmpfiles.org:\n• File expire: 24 hours\n• No registration\n• Fast upload\n\n📌 file.io:\n• File expire: 1 download only\n• More private\n\n📌 catbox.moe:\n• File expire: 1 year\n• Best for long-term"
 })
 
 ProgressTab:CreateParagraph({
-    Title = "📊 Progress Tracking",
-    Content = "Tekan F9 untuk lihat progress detail!\n\nProgress akan ditampilkan di console dengan:\n• Service yang sedang diproses\n• Percentage completion\n• Object count\n• Estimated time"
+    Title = "📊 Progress",
+    Content = "Progress ditampilkan di console (F9)\n\nTekan F9 untuk lihat:\n• Service yang diproses\n• Percentage\n• Object count\n• Upload progress"
 })
 
 Rayfield:Notify({
     Title = "✅ Ready!",
-    Content = "File akan disave di FOLDER XENO!\nBUKAN di Downloads folder!",
+    Content = "File akan di-upload ke web!\nLink download akan auto-copied!",
     Duration = 5
 })
