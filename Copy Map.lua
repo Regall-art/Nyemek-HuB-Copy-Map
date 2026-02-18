@@ -1,12 +1,14 @@
--- NYEMEK HUB | MAP SAVER
--- Custom Full Map Saver with Nyemek Hub UI
+-- NYEMEK HUB | MAP SAVER + MOVEMENT
+-- Ditambahkan fitur Fly & Speed Control
 
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local Players = game:GetService("Players")
 local CoreGui = game:GetService("CoreGui")
+local RunService = game:GetService("RunService")
 
 local player = Players.LocalPlayer
+local mouse = player:GetMouse()
 
 local Theme = {
 	Background = Color3.fromRGB(25, 25, 25),
@@ -65,6 +67,65 @@ local function CreateNYLogo(parent)
 end
 
 -- =============================================
+-- FLY & SPEED LOGIC
+-- =============================================
+local FlyEnabled = false
+local WalkSpeedValue = 16
+local FlySpeedValue = 50
+local c
+
+local function toggleFly()
+	if FlyEnabled then
+		local char = player.Character
+		local head = char:WaitForChild("Head")
+		local hum = char:WaitForChild("Humanoid")
+		
+		-- Root Part setup
+		local root = char:WaitForChild("HumanoidRootPart")
+		
+		local bv = Instance.new("BodyVelocity")
+		bv.MaxForce = Vector3.new(1e9, 1e9, 1e9)
+		bv.Velocity = Vector3.new(0, 0, 0)
+		bv.Name = "NyFlyBV"
+		bv.Parent = root
+		
+		local bg = Instance.new("BodyGyro")
+		bg.MaxTorque = Vector3.new(1e9, 1e9, 1e9)
+		bg.CFrame = root.CFrame
+		bg.Name = "NyFlyBG"
+		bg.Parent = root
+		
+		hum.PlatformStand = true
+		
+		c = RunService.RenderStepped:Connect(function()
+			local look = workspace.CurrentCamera.CFrame.LookVector
+			local right = workspace.CurrentCamera.CFrame.RightVector
+			local move = Vector3.new(0,0,0)
+			
+			if UserInputService:IsKeyDown(Enum.KeyCode.W) then move = move + look end
+			if UserInputService:IsKeyDown(Enum.KeyCode.S) then move = move - look end
+			if UserInputService:IsKeyDown(Enum.KeyCode.A) then move = move - right end
+			if UserInputService:IsKeyDown(Enum.KeyCode.D) then move = move + right end
+			
+			bv.Velocity = move * FlySpeedValue
+			bg.CFrame = workspace.CurrentCamera.CFrame
+		end)
+	else
+		if c then c:Disconnect() end
+		local char = player.Character
+		if char then
+			local hum = char:FindFirstChild("Humanoid")
+			local root = char:FindFirstChild("HumanoidRootPart")
+			if hum then hum.PlatformStand = false end
+			if root then
+				if root:FindFirstChild("NyFlyBV") then root.NyFlyBV:Destroy() end
+				if root:FindFirstChild("NyFlyBG") then root.NyFlyBG:Destroy() end
+			end
+		end
+	end
+end
+
+-- =============================================
 -- BUILD UI
 -- =============================================
 
@@ -75,7 +136,6 @@ ScreenGui.ResetOnSpawn = false
 pcall(function() ScreenGui.Parent = CoreGui end)
 if ScreenGui.Parent ~= CoreGui then ScreenGui.Parent = player.PlayerGui end
 
--- Main Frame
 local Main = Instance.new("Frame")
 Main.Name = "Main"
 Main.Size = UDim2.new(0, 0, 0, 0)
@@ -90,14 +150,12 @@ local MainCorner = Instance.new("UICorner"); MainCorner.CornerRadius = UDim.new(
 local MainStroke = Instance.new("UIStroke"); MainStroke.Color = Color3.fromRGB(0,255,0); MainStroke.Thickness = 2; MainStroke.Parent = Main
 local Shadow = Instance.new("ImageLabel"); Shadow.AnchorPoint = Vector2.new(0.5,0.5); Shadow.BackgroundTransparency = 1; Shadow.Position = UDim2.new(0.5,0,0.5,0); Shadow.Size = UDim2.new(1,47,1,47); Shadow.ZIndex = 0; Shadow.Image = "rbxassetid://5554236805"; Shadow.ImageColor3 = Color3.fromRGB(0,0,0); Shadow.ImageTransparency = 0.5; Shadow.ScaleType = Enum.ScaleType.Slice; Shadow.SliceCenter = Rect.new(23,23,277,277); Shadow.Parent = Main
 
--- Topbar
 local Topbar = Instance.new("Frame"); Topbar.Size = UDim2.new(1,0,0,42); Topbar.BackgroundColor3 = Theme.Topbar; Topbar.BorderSizePixel = 0; Topbar.Parent = Main
 local TopbarCorner = Instance.new("UICorner"); TopbarCorner.CornerRadius = UDim.new(0,6); TopbarCorner.Parent = Topbar
 local TopbarCover = Instance.new("Frame"); TopbarCover.Size = UDim2.new(1,0,0,6); TopbarCover.Position = UDim2.new(0,0,1,-6); TopbarCover.BackgroundColor3 = Theme.Topbar; TopbarCover.BorderSizePixel = 0; TopbarCover.Parent = Topbar
 local Title = Instance.new("TextLabel"); Title.Size = UDim2.new(1,-50,1,0); Title.Position = UDim2.new(0,12,0,0); Title.BackgroundTransparency = 1; Title.Text = "NYEMEK HUB | MAP SAVER"; Title.TextColor3 = Color3.fromRGB(0,255,0); Title.TextSize = 15; Title.Font = Enum.Font.GothamBold; Title.TextXAlignment = Enum.TextXAlignment.Left; Title.Parent = Topbar
 local CloseButton = Instance.new("ImageButton"); CloseButton.Size = UDim2.new(0,18,0,18); CloseButton.Position = UDim2.new(1,-30,0.5,-9); CloseButton.BackgroundTransparency = 1; CloseButton.Image = "rbxassetid://7733717447"; CloseButton.ImageColor3 = Theme.TextColor; CloseButton.Parent = Topbar
 
--- Content Area (no tabs needed, simple layout)
 local Content = Instance.new("ScrollingFrame")
 Content.Size = UDim2.new(1, -20, 1, -52)
 Content.Position = UDim2.new(0, 10, 0, 47)
@@ -112,7 +170,6 @@ Content.Parent = Main
 local ContentList = Instance.new("UIListLayout"); ContentList.Padding = UDim.new(0,8); ContentList.Parent = Content
 local ContentPad = Instance.new("UIPadding"); ContentPad.PaddingTop = UDim.new(0,8); ContentPad.PaddingBottom = UDim.new(0,8); ContentPad.Parent = Content
 
--- Mini Button
 local MiniButton = Instance.new("TextButton"); MiniButton.Size = UDim2.new(0,60,0,60); MiniButton.Position = UDim2.new(1,-70,0.95,-70); MiniButton.BackgroundTransparency = 1; MiniButton.Text = ""; MiniButton.Visible = false; MiniButton.AutoButtonColor = false; MiniButton.Parent = ScreenGui
 CreateNYLogo(MiniButton)
 local MiniStroke = Instance.new("UIStroke"); MiniStroke.Color = Color3.fromRGB(0,255,0); MiniStroke.Thickness = 3; MiniStroke.Parent = MiniButton
@@ -120,20 +177,17 @@ local MiniStroke = Instance.new("UIStroke"); MiniStroke.Color = Color3.fromRGB(0
 CloseButton.MouseButton1Click:Connect(function()
 	Tween(Main,{Size=UDim2.new(0,0,0,0)},Animations.Back); task.wait(0.5); Main.Visible = false
 	MiniButton.Visible = true; MiniButton.Size = UDim2.new(0,0,0,0); Tween(MiniButton,{Size=UDim2.new(0,60,0,60)},Animations.Back)
-	task.spawn(function() while MiniButton.Visible do Tween(MiniButton,{Size=UDim2.new(0,65,0,65)},Animations.Quart); task.wait(1); Tween(MiniButton,{Size=UDim2.new(0,60,0,60)},Animations.Quart); task.wait(1) end end)
 end)
 MiniButton.MouseButton1Click:Connect(function()
 	Tween(MiniButton,{Size=UDim2.new(0,0,0,0)},Animations.Quart); task.wait(0.3); MiniButton.Visible = false
 	Main.Visible = true; Tween(Main,{Size=UDim2.new(0,420,0,480)},Animations.Back)
 end)
-MiniButton.MouseEnter:Connect(function() Tween(MiniButton,{Size=UDim2.new(0,68,0,68)},Animations.Quart) end)
-MiniButton.MouseLeave:Connect(function() Tween(MiniButton,{Size=UDim2.new(0,60,0,60)},Animations.Quart) end)
 
 MakeDraggable(Main, Topbar)
 MakeDraggable(MiniButton)
 
 -- =============================================
--- HELPER: CREATE ELEMENT
+-- ELEMENT CREATORS
 -- =============================================
 
 local function CreateParagraph(title, content)
@@ -177,108 +231,85 @@ local function CreateToggle(name, default, callback)
 	return {GetValue = function() return toggled end}
 end
 
-local function CreateButton(name, callback)
-	local Btn = Instance.new("TextButton")
-	Btn.Size = UDim2.new(1,0,0,35)
-	Btn.BackgroundColor3 = Color3.fromRGB(0, 100, 0)
-	Btn.BorderSizePixel = 0
-	Btn.Text = name
-	Btn.TextColor3 = Color3.fromRGB(255,255,255)
-	Btn.TextSize = 13
-	Btn.Font = Enum.Font.GothamBold
-	Btn.AutoButtonColor = false
-	Btn.Parent = Content
-	local BtnCorner = Instance.new("UICorner"); BtnCorner.CornerRadius = UDim.new(0,5); BtnCorner.Parent = Btn
-	local BtnStroke = Instance.new("UIStroke"); BtnStroke.Color = Color3.fromRGB(0,255,0); BtnStroke.Thickness = 1; BtnStroke.Parent = Btn
+local function CreateInput(name, default, callback)
+	local InputFrame = Instance.new("Frame"); InputFrame.Size = UDim2.new(1,0,0,35); InputFrame.BackgroundColor3 = Theme.ElementBackground; InputFrame.BorderSizePixel = 0; InputFrame.Parent = Content
+	local Corner = Instance.new("UICorner"); Corner.CornerRadius = UDim.new(0,5); Corner.Parent = InputFrame
+	local Stroke = Instance.new("UIStroke"); Stroke.Color = Theme.ElementStroke; Stroke.Thickness = 1; Stroke.Parent = InputFrame
+	local Title = Instance.new("TextLabel"); Title.Size = UDim2.new(1,-110,1,0); Title.Position = UDim2.new(0,10,0,0); Title.BackgroundTransparency = 1; Title.Text = name; Title.TextColor3 = Theme.TextColor; Title.TextSize = 13; Title.Font = Enum.Font.Gotham; Title.TextXAlignment = Enum.TextXAlignment.Left; Title.Parent = InputFrame
+	
+	local InputBox = Instance.new("TextBox")
+	InputBox.Size = UDim2.new(0,80,0,25); InputBox.Position = UDim2.new(1,-90,0.5,-12.5); InputBox.BackgroundColor3 = Theme.Background; InputBox.TextColor3 = Color3.fromRGB(0,255,0); InputBox.Text = tostring(default); InputBox.Font = Enum.Font.GothamBold; InputBox.TextSize = 12; InputBox.Parent = InputFrame
+	local IC = Instance.new("UICorner"); IC.CornerRadius = UDim.new(0,4); IC.Parent = InputBox
+	local IS = Instance.new("UIStroke"); IS.Color = Theme.ElementStroke; IS.Parent = InputBox
 
-	Btn.MouseEnter:Connect(function() Tween(Btn,{BackgroundColor3=Color3.fromRGB(0,140,0)},Animations.Quart) end)
-	Btn.MouseLeave:Connect(function() Tween(Btn,{BackgroundColor3=Color3.fromRGB(0,100,0)},Animations.Quart) end)
-	Btn.MouseButton1Click:Connect(function()
-		Tween(Btn,{BackgroundColor3=Color3.fromRGB(0,60,0)},Animations.Quart)
-		task.wait(0.1)
-		Tween(Btn,{BackgroundColor3=Color3.fromRGB(0,100,0)},Animations.Quart)
-		if callback then callback() end
+	InputBox.FocusLost:Connect(function()
+		local val = tonumber(InputBox.Text)
+		if val then callback(val) else InputBox.Text = tostring(default) end
 	end)
+end
+
+local function CreateButton(name, callback)
+	local Btn = Instance.new("TextButton"); Btn.Size = UDim2.new(1,0,0,35); Btn.BackgroundColor3 = Color3.fromRGB(0, 100, 0); Btn.Text = name; Btn.TextColor3 = Color3.fromRGB(255,255,255); Btn.TextSize = 13; Btn.Font = Enum.Font.GothamBold; Btn.Parent = Content
+	local BtnCorner = Instance.new("UICorner"); BtnCorner.CornerRadius = UDim.new(0,5); BtnCorner.Parent = Btn
+	Btn.MouseButton1Click:Connect(callback)
 	return Btn
 end
 
--- Status label
 local function CreateStatusBar(defaultText)
 	local Frame = Instance.new("Frame"); Frame.Size = UDim2.new(1,0,0,30); Frame.BackgroundColor3 = Theme.ElementBackground; Frame.BorderSizePixel = 0; Frame.Parent = Content
-	local Corner = Instance.new("UICorner"); Corner.CornerRadius = UDim.new(0,5); Corner.Parent = Frame
-	local Stroke = Instance.new("UIStroke"); Stroke.Color = Theme.ElementStroke; Stroke.Thickness = 1; Stroke.Parent = Frame
-	local Label = Instance.new("TextLabel"); Label.Size = UDim2.new(1,-10,1,0); Label.Position = UDim2.new(0,10,0,0); Label.BackgroundTransparency = 1; Label.Text = defaultText or "Status: Ready"; Label.TextColor3 = Theme.TextDark; Label.TextSize = 12; Label.Font = Enum.Font.Gotham; Label.TextXAlignment = Enum.TextXAlignment.Left; Label.Parent = Frame
+	local Label = Instance.new("TextLabel"); Label.Size = UDim2.new(1,-10,1,0); Label.Position = UDim2.new(0,10,0,0); Label.BackgroundTransparency = 1; Label.Text = defaultText; Label.TextColor3 = Theme.TextDark; Label.TextSize = 12; Label.Font = Enum.Font.Gotham; Label.TextXAlignment = Enum.TextXAlignment.Left; Label.Parent = Frame
 	return Label
 end
 
 -- =============================================
--- SAVE PARAMS (dengan toggle)
+-- MAIN APP
 -- =============================================
 
-local Params = {
-	RepoID = 1,
-	Decompile = true,
-	NoScripts = false,
-	Timeout = 900,
-}
-
--- Build UI Elements
-CreateParagraph("🗺️ Nyemek Hub | Map Saver", "Save full map game ke file .rbxl di folder executor kamu. Pastikan executor support saveinstance!")
-
+CreateParagraph("🗺️ Nyemek Hub | Map Saver", "Save full map game ke file .rbxl.")
 local statusLabel = CreateStatusBar("Status: Siap")
 
+-- SECTION MOVEMENT
+CreateParagraph("🏃 Movement Control", "Gunakan Fly untuk render StreamingEnabled.")
+CreateToggle("Enable Fly", false, function(val)
+	FlyEnabled = val
+	toggleFly()
+end)
+
+CreateInput("WalkSpeed", 16, function(val)
+	WalkSpeedValue = val
+	if player.Character and player.Character:FindFirstChild("Humanoid") then
+		player.Character.Humanoid.WalkSpeed = val
+	end
+end)
+
+CreateInput("Fly Speed", 50, function(val)
+	FlySpeedValue = val
+end)
+
+-- SECTION SAVE
 CreateParagraph("⚙️ Pengaturan Save", "Konfigurasi sebelum mulai save map.")
+local Params = {RepoID = 1, Decompile = true, NoScripts = false, Timeout = 900}
 
-local decompileToggle = CreateToggle("Decompile Scripts (LocalScript & ModuleScript)", true, function(val)
-	Params.Decompile = val
-end)
+CreateToggle("Decompile Scripts", true, function(val) Params.Decompile = val end)
+CreateToggle("No Scripts", false, function(val) Params.NoScripts = val end)
 
-local noscriptToggle = CreateToggle("No Scripts (Jangan save script)", false, function(val)
-	Params.NoScripts = val
-end)
-
-CreateParagraph("💡 Tips", "Terbang keliling seluruh map dulu sebelum save agar semua part ter-render (penting untuk game dengan StreamingEnabled). Proses bisa memakan waktu 1-15 menit tergantung ukuran map.")
-
-CreateParagraph("⚠️ Warning", "Game mungkin akan freeze sejenak saat proses save berlangsung. Jangan close executor atau game selama proses berlangsung!")
-
--- TOMBOL SAVE
 CreateButton("💾 SAVE MAP SEKARANG", function()
 	if not saveinstance then
 		statusLabel.Text = "❌ Error: Executor tidak support saveinstance!"
-		statusLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
-		print("[MapSaver] Error: saveinstance tidak tersedia di executor ini.")
 		return
 	end
-
-	statusLabel.Text = "⏳ Sedang menyimpan map... Harap tunggu!"
-	statusLabel.TextColor3 = Color3.fromRGB(255, 200, 0)
-	print("[MapSaver] Memulai proses save map...")
-	print("[MapSaver] Decompile: " .. tostring(Params.Decompile))
-	print("[MapSaver] NoScripts: " .. tostring(Params.NoScripts))
-	print("[MapSaver] Timeout: " .. tostring(Params.Timeout) .. " detik")
-
+	statusLabel.Text = "⏳ Menyimpan... Harap tunggu!"
 	task.spawn(function()
 		local success, err = pcall(function()
-			saveinstance({
-				RepoID = Params.RepoID,
-				Decompile = Params.Decompile,
-				NoScripts = Params.NoScripts,
-				Timeout = Params.Timeout,
-			})
+			saveinstance({RepoID = Params.RepoID, Decompile = Params.Decompile, NoScripts = Params.NoScripts, Timeout = Params.Timeout})
 		end)
-
 		if success then
-			statusLabel.Text = "✅ Map berhasil disimpan! Cek folder executor."
-			statusLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
-			print("[MapSaver] ✅ Selesai! Cek folder 'workspace' di executor kamu.")
+			statusLabel.Text = "✅ Berhasil! Cek folder workspace."
 		else
 			statusLabel.Text = "❌ Gagal: " .. tostring(err)
-			statusLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
-			print("[MapSaver] ❌ Error: " .. tostring(err))
 		end
 	end)
 end)
 
--- Open main window
+-- Open UI
 Tween(Main, {Size = UDim2.new(0, 420, 0, 480)}, Animations.Back)
-print("[MapSaver] UI Loaded!")
